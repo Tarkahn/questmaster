@@ -432,7 +432,7 @@ export default function Dashboard({ token, onSignOut }) {
         {error && <div className="error">{error}</div>}
 
         {!loading && !error && view === 'chronicle' && (
-          <Chronicle history={history} />
+          <Chronicle history={history} habits={habits} />
         )}
 
         {!loading && !error && view === 'quests' && (

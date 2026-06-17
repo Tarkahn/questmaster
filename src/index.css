@@ -1211,6 +1211,54 @@ body {
   max-width: 100%;
   height: auto;
 }
+.chronicle-hall {
+  margin-top: 10px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.chronicle-hall-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.chronicle-hall-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  gap: 0 8px;
+}
+.chronicle-hall-item:last-child {
+  border-bottom: none;
+}
+.chronicle-hall-boss {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold);
+  grid-column: 1;
+  grid-row: 1;
+}
+.chronicle-hall-habit {
+  font-size: 11px;
+  color: var(--text-muted);
+  grid-column: 1;
+  grid-row: 2;
+}
+.chronicle-hall-date {
+  font-size: 11px;
+  color: var(--text-muted);
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: center;
+  text-align: right;
+}
 
 /* --- Multi-field form (Create Quest / Mission modals) --- */
 .quest-form {
