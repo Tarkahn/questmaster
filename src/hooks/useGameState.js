@@ -160,6 +160,18 @@ export function useGameState() {
     })
   }
 
+  function resetStats() {
+    Object.values(KEYS).forEach(k => localStorage.removeItem(k))
+    setState({
+      points: 0,
+      streak: 0,
+      bestStreak: 0,
+      lastCompletedDate: null,
+      claimedEvents: { date: todayStr(), ids: [] },
+      history: [],
+    })
+  }
+
   const completedToday = state.lastCompletedDate === todayStr()
   const { level, xpInto, xpNeeded, pct } = getLevelProgress(state.points)
 
@@ -172,5 +184,6 @@ export function useGameState() {
     xpPct: pct,
     completeTask,
     claimEvent,
+    resetStats,
   }
 }

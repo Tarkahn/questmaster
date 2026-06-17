@@ -100,6 +100,28 @@ export function deleteHabit(habits, habitId) {
   return habits.filter(h => h.id !== habitId)
 }
 
+export function resetHabit(habits, habitId) {
+  return habits.map(h => h.id !== habitId ? h : {
+    ...h,
+    boss: { ...h.boss, currentHP: h.boss.maxHP },
+    totalCompletions: 0,
+    lastCompletedDate: null,
+    status: 'active',
+    lastNarrative: h.boss.description,
+  })
+}
+
+export function resetAllBossStats(habits) {
+  return habits.map(h => ({
+    ...h,
+    boss: { ...h.boss, currentHP: h.boss.maxHP },
+    totalCompletions: 0,
+    lastCompletedDate: null,
+    status: 'active',
+    lastNarrative: h.boss.description,
+  }))
+}
+
 export function processHabits(habits) {
   const { habits: updated, changed } = applyMissPenalties(habits)
   return { habits: updated, changed }

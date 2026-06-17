@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import XPBarChart from './XPBarChart'
 import LevelLineChart from './LevelLineChart'
 
-export default function Chronicle({ history = [], habits = [] }) {
+export default function Chronicle({ history = [], habits = [], onResetBossStats, onResetStats }) {
+  const [confirmBossReset, setConfirmBossReset] = useState(false)
+  const [confirmStatsReset, setConfirmStatsReset] = useState(false)
   const today = new Date().toISOString().slice(0, 10)
   const todayRow = history.find(h => h.date === today)
   const totalXpEarned = history.reduce((sum, h) => sum + (h.xpEarned || 0), 0)
@@ -87,6 +90,25 @@ export default function Chronicle({ history = [], habits = [] }) {
             ))}
           </div>
         )}
+        {habits.length > 0 && (
+          <div className="chronicle-reset-row">
+            {!confirmBossReset ? (
+              <button className="chronicle-reset-btn" onClick={() => setConfirmBossReset(true)}>
+                ↺ Reset all boss progress
+              </button>
+            ) : (
+              <div className="chronicle-reset-confirm">
+                <span>Restart all bosses to day one?</span>
+                <button className="chronicle-reset-btn chronicle-reset-btn--confirm" onClick={() => { onResetBossStats(); setConfirmBossReset(false) }}>
+                  Confirm
+                </button>
+                <button className="chronicle-reset-btn" onClick={() => setConfirmBossReset(false)}>
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="section">
@@ -108,6 +130,23 @@ export default function Chronicle({ history = [], habits = [] }) {
             <div className="chronicle-card-value">{activeDays}</div>
             <div className="chronicle-card-label">Active days</div>
           </div>
+        </div>
+        <div className="chronicle-reset-row">
+          {!confirmStatsReset ? (
+            <button className="chronicle-reset-btn" onClick={() => setConfirmStatsReset(true)}>
+              ↺ Reset XP &amp; streak history
+            </button>
+          ) : (
+            <div className="chronicle-reset-confirm">
+              <span>Wipe all XP, levels, and streaks?</span>
+              <button className="chronicle-reset-btn chronicle-reset-btn--confirm" onClick={() => { onResetStats(); setConfirmStatsReset(false) }}>
+                Confirm
+              </button>
+              <button className="chronicle-reset-btn" onClick={() => setConfirmStatsReset(false)}>
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       </section>
     </>

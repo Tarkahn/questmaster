@@ -1259,6 +1259,39 @@ body {
   align-self: center;
   text-align: right;
 }
+.chronicle-reset-row {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+.chronicle-reset-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.chronicle-reset-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.chronicle-reset-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+.chronicle-reset-btn--confirm {
+  border-color: var(--fire);
+  color: var(--fire);
+}
+.chronicle-reset-btn--confirm:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
 
 /* --- Multi-field form (Create Quest / Mission modals) --- */
 .quest-form {

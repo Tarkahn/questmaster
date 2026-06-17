@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { isCompletedToday } from '../utils/habits'
 
-export default function BossCard({ habit, onComplete, onPause, onResume, onDelete }) {
+export default function BossCard({ habit, onComplete, onPause, onResume, onDelete, onReset }) {
   const [checking, setChecking] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmRestart, setConfirmRestart] = useState(false)
   const menuRef = useRef(null)
 
   const { boss, themedTitle, lastNarrative, totalCompletions, status } = habit
@@ -40,9 +41,11 @@ export default function BossCard({ habit, onComplete, onPause, onResume, onDelet
   function handleMenuAction(action) {
     setMenuOpen(false)
     setConfirmDelete(false)
+    setConfirmRestart(false)
     if (action === 'pause') onPause(habit.id)
     if (action === 'resume') onResume(habit.id)
     if (action === 'delete') onDelete(habit.id)
+    if (action === 'restart') onReset(habit.id)
   }
 
   return (
@@ -79,10 +82,25 @@ export default function BossCard({ habit, onComplete, onPause, onResume, onDelet
                     ▶ Resume
                   </button>
                 )}
+                {!confirmRestart ? (
+                  <button
+                    className="boss-menu-item boss-menu-item--danger"
+                    onClick={() => { setConfirmDelete(false); setConfirmRestart(true) }}
+                  >
+                    ↺ Restart
+                  </button>
+                ) : (
+                  <button
+                    className="boss-menu-item boss-menu-item--confirm"
+                    onClick={() => handleMenuAction('restart')}
+                  >
+                    Confirm Restart
+                  </button>
+                )}
                 {!confirmDelete ? (
                   <button
                     className="boss-menu-item boss-menu-item--danger"
-                    onClick={() => setConfirmDelete(true)}
+                    onClick={() => { setConfirmRestart(false); setConfirmDelete(true) }}
                   >
                     🗑 Delete
                   </button>

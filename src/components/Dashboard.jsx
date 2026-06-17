@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, createTask, createEvent } from '../utils/api'
 import { themeItems, clearThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
-import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit } from '../utils/habits'
+import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
 import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive } from '../utils/driveSync'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
@@ -43,7 +43,7 @@ export default function Dashboard({ token, onSignOut }) {
     points, streak, bestStreak, completedToday,
     level, xpInto, xpNeeded, xpPct,
     claimedEvents, completeTask, claimEvent,
-    history,
+    history, resetStats,
   } = useGameState()
   const prevLevelRef = useRef(null)
   const handleSignOut = useCallback(onSignOut, [onSignOut])
@@ -327,6 +327,23 @@ export default function Dashboard({ token, onSignOut }) {
     setToast(`🗑 ${habit?.boss?.name || 'Boss'} dismissed.`)
   }
 
+  function handleResetHabit(habitId) {
+    const habit = habits.find(h => h.id === habitId)
+    const updated = resetHabit(habits, habitId)
+    setHabits(updated)
+    saveHabits(updated)
+    saveToDrive(token, updated)
+    setToast(`↺ ${habit?.boss?.name || 'Boss'} restarted — back to day one!`)
+  }
+
+  function handleResetAllBossStats() {
+    const updated = resetAllBossStats(habits)
+    setHabits(updated)
+    saveHabits(updated)
+    saveToDrive(token, updated)
+    setToast('↺ All boss encounters restarted.')
+  }
+
   const activeHabits = habits.filter(h => h.status === 'active')
   const pausedHabits = habits.filter(h => h.status === 'paused')
   const defeatedHabits = habits.filter(h => h.status === 'defeated')
@@ -432,7 +449,12 @@ export default function Dashboard({ token, onSignOut }) {
         {error && <div className="error">{error}</div>}
 
         {!loading && !error && view === 'chronicle' && (
-          <Chronicle history={history} habits={habits} />
+          <Chronicle
+            history={history}
+            habits={habits}
+            onResetBossStats={handleResetAllBossStats}
+            onResetStats={resetStats}
+          />
         )}
 
         {!loading && !error && view === 'quests' && (
@@ -505,6 +527,7 @@ export default function Dashboard({ token, onSignOut }) {
                   onPause={handlePauseHabit}
                   onResume={handleResumeHabit}
                   onDelete={handleDeleteHabit}
+                  onReset={handleResetHabit}
                 />
               ))}
               {pausedHabits.length > 0 && (
