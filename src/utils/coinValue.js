@@ -15,8 +15,10 @@ export function decayMultiplier(firstSeenDateStr) {
 }
 
 // Coins earned when a task is completed. seenMap = { [taskId]: 'YYYY-MM-DD' }.
-export function computeCoins(taskId, difficulty, seenMap) {
+// characterClass: Rogue raises the floor multiplier to 0.5 (never drops below 50%).
+export function computeCoins(taskId, difficulty, seenMap, characterClass) {
   const base = BASE_COIN_VALUE[difficulty] || BASE_COIN_VALUE.normal
-  const mult = decayMultiplier(seenMap?.[taskId])
+  let mult = decayMultiplier(seenMap?.[taskId])
+  if (characterClass === 'rogue' && mult < 0.5) mult = 0.5
   return Math.max(1, Math.floor(base * mult))
 }

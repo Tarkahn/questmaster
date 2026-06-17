@@ -12,6 +12,8 @@ const GAME_STATE_FILE_NAME = 'questmaster-gamestate.json'
 const GAME_STATE_FILE_ID_KEY = 'qm_drive_gamestate_id'
 const THEME_CACHE_FILE_NAME = 'questmaster-themes.json'
 const THEME_CACHE_FILE_ID_KEY = 'qm_drive_themes_id'
+const CHARACTER_FILE_NAME = 'questmaster-character.json'
+const CHARACTER_FILE_ID_KEY = 'qm_drive_character_id'
 
 function auth(token) {
   return { Authorization: `Bearer ${token}` }
@@ -579,4 +581,74 @@ export async function saveToDrive(token, habits) {
   } catch {
     return { ok: false }
   }
+}
+
+async function findCharacterFileId(token) {
+  const params = new URLSearchParams({
+    spaces: 'appDataFolder',
+    q: `name='${CHARACTER_FILE_NAME}'`,
+    fields: 'files(id)',
+    orderBy: 'createdTime',
+  })
+  const res = await fetch(`${DRIVE}/files?${params}`, { headers: auth(token) })
+  if (!res.ok) throw Object.assign(new Error(`Drive list failed: ${res.status}`), { status: res.status })
+  const data = await res.json()
+  return data.files?.[0]?.id || null
+}
+
+async function getCharacterFileId(token) {
+  const id = await findCharacterFileId(token)
+  if (id) localStorage.setItem(CHARACTER_FILE_ID_KEY, id)
+  else localStorage.removeItem(CHARACTER_FILE_ID_KEY)
+  return id
+}
+
+export async function loadCharacter(token) {
+  try {
+    const fileId = await getCharacterFileId(token)
+    if (!fileId) return { character: null, error: null }
+    const res = await fetch(`${DRIVE}/files/${fileId}?alt=media`, { headers: auth(token) })
+    if (res.status === 404) {
+      localStorage.removeItem(CHARACTER_FILE_ID_KEY)
+      return { character: null, error: null }
+    }
+    if (!res.ok) throw Object.assign(new Error(`Drive read failed: ${res.status}`), { status: res.status })
+    const character = await res.json()
+    return { character: character && typeof character === 'object' ? character : null, error: null }
+  } catch (e) {
+    const status = e.status
+    if (status === 401 || status === 403) return { character: null, error: 'scope' }
+    return { character: null, error: 'network' }
+  }
+}
+
+export async function saveCharacter(token, character) {
+  try {
+    const body = JSON.stringify(character)
+    let fileId = await getCharacterFileId(token)
+    if (fileId) {
+      const res = await fetch(`${UPLOAD}/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { ...auth(token), 'Content-Type': 'application/json' },
+        body,
+      })
+      if (res.status === 404) {
+        localStorage.removeItem(CHARACTER_FILE_ID_KEY)
+        return saveCharacter(token, character)
+      }
+    } else {
+      const boundary = 'qm_boundary_007'
+      const metadata = JSON.stringify({ name: CHARACTER_FILE_NAME, parents: ['appDataFolder'] })
+      const multipart = [
+        `--${boundary}`, 'Content-Type: application/json; charset=UTF-8', '', metadata,
+        `--${boundary}`, 'Content-Type: application/json', '', body, `--${boundary}--`,
+      ].join('\r\n')
+      const res = await fetch(`${UPLOAD}/files?uploadType=multipart`, {
+        method: 'POST',
+        headers: { ...auth(token), 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body: multipart,
+      })
+      if (res.ok) { const data = await res.json(); if (data.id) localStorage.setItem(CHARACTER_FILE_ID_KEY, data.id) }
+    }
+  } catch {}
 }

@@ -3,7 +3,7 @@ import { TIER_INFO, cycleTier } from '../utils/difficulty'
 
 const REVEAL_MS = 10000
 
-export default function TaskItem({ task, themedTitle, difficulty = 'normal', coinValue = 0, onComplete, onDifficultyChange, onEdit }) {
+export default function TaskItem({ task, themedTitle, difficulty = 'normal', coinValue = 0, diceBonus = 0, onComplete, onDifficultyChange, onEdit }) {
   const [phase, setPhase] = useState('idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
   const [earnedXP, setEarnedXP] = useState(null)
@@ -36,11 +36,11 @@ export default function TaskItem({ task, themedTitle, difficulty = 'normal', coi
       if (count >= 18) {
         clearInterval(intervalRef.current)
         const roll = Math.ceil(Math.random() * 20)
-        const total = roll + tier.d20Bonus
+        const total = roll + tier.d20Bonus + diceBonus
         setDisplayNum(roll)
         setEarnedXP(total)
         setPhase('done')
-        onComplete(task.id, total, coinValue)
+        onComplete(task.id, total, coinValue, difficulty)
       }
     }, 55)
   }

@@ -4,7 +4,7 @@ import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
-import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache } from '../utils/driveSync'
+import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, saveCharacter } from '../utils/driveSync'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
 import { useGameState, computeGameStateMerge } from '../hooks/useGameState'
@@ -19,7 +19,10 @@ import EditMissionModal from './EditMissionModal'
 import GlossaryModal from './GlossaryModal'
 import SettingsModal from './SettingsModal'
 import Chronicle from './Chronicle'
+import CharacterSelectModal from './CharacterSelectModal'
+import CharacterView from './CharacterView'
 import Toast from './Toast'
+import { CLASSES, DEFAULT_CHARACTER, classDiceBonus, applyXpPerk, applyRangerMissionBonus } from '../utils/character'
 
 export default function Dashboard({ token, onSignOut }) {
   const [tasks, setTasks] = useState([])
@@ -38,6 +41,8 @@ export default function Dashboard({ token, onSignOut }) {
   const [taskSeenMap, setTaskSeenMap] = useState(() => {
     try { return JSON.parse(localStorage.getItem('qm_task_seen') || '{}') } catch { return {} }
   })
+  const [character, setCharacter] = useState(DEFAULT_CHARACTER)
+  const [showCharacterSelect, setShowCharacterSelect] = useState(false)
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
   const [showSettings, setShowSettings] = useState(false)
@@ -45,7 +50,7 @@ export default function Dashboard({ token, onSignOut }) {
   const [difficultyMemory, setDifficultyMemory] = useState(() => loadDifficultyMemory())
   const [suggestedDifficulties, setSuggestedDifficulties] = useState({})
   const [syncStatus, setSyncStatus] = useState('checking') // checking | ok | scope | network
-  const [view, setView] = useState('quests') // quests | chronicle
+  const [view, setView] = useState('quests') // quests | chronicle | character
 
   const {
     points, coins, streak, bestStreak, lastCompletedDate, completedToday,
@@ -99,12 +104,14 @@ export default function Dashboard({ token, onSignOut }) {
         { memory: driveDifficulties },
         { settings: driveSettings },
         { state: driveGameState },
+        { character: driveCharacter },
       ] = await Promise.all([
         loadFromDrive(token),
         loadGlossary(token),
         loadDifficulties(token),
         loadSettingsFromDrive(token),
         loadGameState(token),
+        loadCharacter(token),
       ])
 
       if (error === 'scope') {
@@ -153,6 +160,14 @@ export default function Dashboard({ token, onSignOut }) {
         // No Drive file yet — bootstrap from local state so the other device
         // can read it on its next poll.
         await saveGameStateToDrive(token, gameStateRef.current)
+      }
+
+      if (driveCharacter) {
+        setCharacter(prev => ({ ...DEFAULT_CHARACTER, ...prev, ...driveCharacter }))
+        if (!driveCharacter.class) setShowCharacterSelect(true)
+      } else {
+        // First launch — show class selection
+        setShowCharacterSelect(true)
       }
     }
 
@@ -243,13 +258,15 @@ export default function Dashboard({ token, onSignOut }) {
 
   useEffect(() => { loadTasksAndEvents() }, [loadTasksAndEvents])
 
-  async function handleComplete(taskId, xp, coinValue) {
+  async function handleComplete(taskId, xp, coinValue, difficulty) {
     try {
       await markTaskComplete(token, taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
-      completeTask(xp)
+      const finalXP = applyXpPerk(xp, character.class, difficulty)
+      completeTask(finalXP)
       earnCoins(coinValue)
-      setToast(`⚔️ Quest Complete! +${xp} XP  +${coinValue} 🪙`)
+      const xpNote = finalXP !== xp ? ` (${CLASSES[character.class]?.name} bonus!)` : ''
+      setToast(`⚔️ Quest Complete! +${finalXP} XP${xpNote}  +${coinValue} 🪙`)
     } catch (err) {
       console.error('Failed to complete task:', err)
     }
@@ -267,6 +284,15 @@ export default function Dashboard({ token, onSignOut }) {
     setShowCreateMission(false)
     setToast(`📅 Mission inscribed: ${data.title}`)
     loadTasksAndEvents()
+  }
+
+  async function handleSelectClass(classId) {
+    const updated = { ...character, class: classId }
+    setCharacter(updated)
+    setShowCharacterSelect(false)
+    const cls = CLASSES[classId]
+    setToast(`${cls.emoji} You are now a ${cls.name}!`)
+    await saveCharacter(token, updated)
   }
 
   async function handleSaveTask(taskId, data) {
@@ -378,8 +404,9 @@ export default function Dashboard({ token, onSignOut }) {
 
   function handleClaim(eventId, xp, coinValue) {
     claimEvent(eventId, xp)
-    earnCoins(coinValue)
-    setToast(`🔮 Mission Claimed! +${xp} XP  +${coinValue} 🪙`)
+    const finalCoins = applyRangerMissionBonus(coinValue, character.class)
+    earnCoins(finalCoins)
+    setToast(`🔮 Mission Claimed! +${xp} XP  +${finalCoins} 🪙`)
   }
 
   function isEventClaimed(eventId) {
@@ -545,6 +572,13 @@ export default function Dashboard({ token, onSignOut }) {
           onClose={() => setShowSettings(false)}
         />
       )}
+      {showCharacterSelect && (
+        <CharacterSelectModal
+          currentClass={character.class}
+          onSelect={handleSelectClass}
+          onClose={() => setShowCharacterSelect(false)}
+        />
+      )}
 
       <header className="header">
         <div className="header-top">
@@ -559,6 +593,13 @@ export default function Dashboard({ token, onSignOut }) {
               title={view === 'chronicle' ? 'Back to today\'s quests' : 'View your chronicle'}
             >
               {view === 'chronicle' ? '⚔️' : '📊'}
+            </button>
+            <button
+              className="glossary-btn"
+              onClick={() => setView(v => v === 'character' ? 'quests' : 'character')}
+              title={view === 'character' ? 'Back to today\'s quests' : 'View character'}
+            >
+              👤
             </button>
             <button className="glossary-btn" onClick={() => setShowGlossary(true)} title="Edit D&D vocabulary glossary">📜</button>
             <button className="glossary-btn" onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
@@ -610,6 +651,17 @@ export default function Dashboard({ token, onSignOut }) {
           />
         )}
 
+        {!loading && !error && view === 'character' && (
+          <CharacterView
+            character={character}
+            level={level}
+            coins={coins}
+            points={points}
+            bossesDefeated={defeatedHabits.length}
+            onChangeClass={() => setShowCharacterSelect(true)}
+          />
+        )}
+
         {!loading && !error && view === 'quests' && (
           <>
             <section className="section">
@@ -630,7 +682,8 @@ export default function Dashboard({ token, onSignOut }) {
                       task={task}
                       themedTitle={themedTitles[task.id]}
                       difficulty={getEffectiveDifficulty(task.id)}
-                      coinValue={computeCoins(task.id, getEffectiveDifficulty(task.id), taskSeenMap)}
+                      coinValue={computeCoins(task.id, getEffectiveDifficulty(task.id), taskSeenMap, character.class)}
+                      diceBonus={classDiceBonus(character.class)}
                       onComplete={handleComplete}
                       onDifficultyChange={handleDifficultyChange}
                       onEdit={() => setEditingTask(task)}
@@ -655,7 +708,7 @@ export default function Dashboard({ token, onSignOut }) {
                       themedTitle={themedTitles[event.id]}
                       claimed={isEventClaimed(event.id)}
                       difficulty={getEffectiveDifficulty(event.id)}
-                      coinValue={BASE_COIN_VALUE[getEffectiveDifficulty(event.id)] || BASE_COIN_VALUE.normal}
+                      coinValue={applyRangerMissionBonus(BASE_COIN_VALUE[getEffectiveDifficulty(event.id)] || BASE_COIN_VALUE.normal, character.class)}
                       onClaim={handleClaim}
                       onDifficultyChange={handleDifficultyChange}
                       onEdit={() => setEditingEvent(event)}
