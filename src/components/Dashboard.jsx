@@ -3,7 +3,7 @@ import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, createTask, crea
 import { themeItems, clearThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
-import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive } from '../utils/driveSync'
+import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive } from '../utils/driveSync'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
 import { useGameState } from '../hooks/useGameState'
@@ -43,7 +43,7 @@ export default function Dashboard({ token, onSignOut }) {
     points, streak, bestStreak, completedToday,
     level, xpInto, xpNeeded, xpPct,
     claimedEvents, completeTask, claimEvent,
-    history, resetStats,
+    history, resetStats, mergeGameState,
   } = useGameState()
   const prevLevelRef = useRef(null)
   const handleSignOut = useCallback(onSignOut, [onSignOut])
@@ -65,11 +65,13 @@ export default function Dashboard({ token, onSignOut }) {
         { text: driveGlossary },
         { memory: driveDifficulties },
         { settings: driveSettings },
+        { state: driveGameState },
       ] = await Promise.all([
         loadFromDrive(token),
         loadGlossary(token),
         loadDifficulties(token),
         loadSettingsFromDrive(token),
+        loadGameState(token),
       ])
 
       if (error === 'scope') {
@@ -107,6 +109,10 @@ export default function Dashboard({ token, onSignOut }) {
         setSettings(merged)
         saveSettings(merged)
       }
+
+      if (driveGameState) {
+        mergeGameState(driveGameState)
+      }
     }
 
     syncFromDrive()
@@ -126,6 +132,19 @@ export default function Dashboard({ token, onSignOut }) {
       window.removeEventListener('focus', syncFromDrive)
     }
   }, [token])
+
+  // Write game state to Drive whenever XP changes (task/event completions and resets).
+  const prevPointsRef = useRef(null)
+  useEffect(() => {
+    if (prevPointsRef.current === null) {
+      prevPointsRef.current = points
+      return
+    }
+    if (points !== prevPointsRef.current) {
+      prevPointsRef.current = points
+      saveGameStateToDrive(token, { points, streak, bestStreak, lastCompletedDate, history })
+    }
+  }, [points])
 
   const loadTasksAndEvents = useCallback(async () => {
     try {

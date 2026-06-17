@@ -160,6 +160,45 @@ export function useGameState() {
     })
   }
 
+  function mergeGameState(drive) {
+    setState(local => {
+      const points = Math.max(local.points, drive.points || 0)
+      const bestStreak = Math.max(local.bestStreak, drive.bestStreak || 0)
+
+      // Whichever device has the more recent lastCompletedDate owns the streak value
+      const localDate = local.lastCompletedDate || ''
+      const driveDate = drive.lastCompletedDate || ''
+      const lastCompletedDate = localDate >= driveDate ? local.lastCompletedDate : (drive.lastCompletedDate || null)
+      const streak = localDate >= driveDate ? local.streak : (drive.streak || 0)
+
+      // Merge history: union of dates, take max per field per day
+      const historyMap = {}
+      for (const row of [...(local.history || []), ...(drive.history || [])]) {
+        const e = historyMap[row.date]
+        historyMap[row.date] = e ? {
+          date: row.date,
+          xpEarned: Math.max(e.xpEarned || 0, row.xpEarned || 0),
+          tasksCompleted: Math.max(e.tasksCompleted || 0, row.tasksCompleted || 0),
+          eventsClaimed: Math.max(e.eventsClaimed || 0, row.eventsClaimed || 0),
+          xpTotal: Math.max(e.xpTotal || 0, row.xpTotal || 0),
+          level: Math.max(e.level || 1, row.level || 1),
+          streak: Math.max(e.streak || 0, row.streak || 0),
+        } : { ...row }
+      }
+      const history = Object.values(historyMap)
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(-HISTORY_LIMIT)
+
+      localStorage.setItem(KEYS.points, String(points))
+      localStorage.setItem(KEYS.streak, String(streak))
+      localStorage.setItem(KEYS.bestStreak, String(bestStreak))
+      if (lastCompletedDate) localStorage.setItem(KEYS.lastCompletedDate, lastCompletedDate)
+      localStorage.setItem(KEYS.history, JSON.stringify(history))
+
+      return { ...local, points, streak, bestStreak, lastCompletedDate, history }
+    })
+  }
+
   function resetStats() {
     Object.values(KEYS).forEach(k => localStorage.removeItem(k))
     setState({
@@ -185,5 +224,6 @@ export function useGameState() {
     completeTask,
     claimEvent,
     resetStats,
+    mergeGameState,
   }
 }

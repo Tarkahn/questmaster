@@ -8,6 +8,8 @@ const DIFFICULTIES_FILE_NAME = 'questmaster-difficulties.json'
 const DIFFICULTIES_FILE_ID_KEY = 'qm_drive_diff_id'
 const SETTINGS_FILE_NAME = 'questmaster-settings.json'
 const SETTINGS_FILE_ID_KEY = 'qm_drive_settings_id'
+const GAME_STATE_FILE_NAME = 'questmaster-gamestate.json'
+const GAME_STATE_FILE_ID_KEY = 'qm_drive_gamestate_id'
 
 function auth(token) {
   return { Authorization: `Bearer ${token}` }
@@ -353,6 +355,100 @@ export async function saveSettingsToDrive(token, settings) {
       if (res.ok) {
         const data = await res.json()
         if (data.id) localStorage.setItem(SETTINGS_FILE_ID_KEY, data.id)
+      }
+      return { ok: res.ok, status: res.status }
+    }
+  } catch {
+    return { ok: false }
+  }
+}
+
+async function findGameStateFileId(token) {
+  const params = new URLSearchParams({
+    spaces: 'appDataFolder',
+    q: `name='${GAME_STATE_FILE_NAME}'`,
+    fields: 'files(id)',
+    orderBy: 'createdTime',
+  })
+  const res = await fetch(`${DRIVE}/files?${params}`, { headers: auth(token) })
+  if (!res.ok) throw Object.assign(new Error(`Drive list failed: ${res.status}`), { status: res.status })
+  const data = await res.json()
+  return data.files?.[0]?.id || null
+}
+
+async function getGameStateFileId(token) {
+  const id = await findGameStateFileId(token)
+  if (id) localStorage.setItem(GAME_STATE_FILE_ID_KEY, id)
+  else localStorage.removeItem(GAME_STATE_FILE_ID_KEY)
+  return id
+}
+
+export async function loadGameState(token) {
+  try {
+    const fileId = await getGameStateFileId(token)
+    if (!fileId) return { state: null, error: null }
+
+    const res = await fetch(`${DRIVE}/files/${fileId}?alt=media`, { headers: auth(token) })
+    if (res.status === 404) {
+      localStorage.removeItem(GAME_STATE_FILE_ID_KEY)
+      return { state: null, error: null }
+    }
+    if (!res.ok) throw Object.assign(new Error(`Drive read failed: ${res.status}`), { status: res.status })
+
+    const state = await res.json()
+    return { state: state && typeof state === 'object' ? state : null, error: null }
+  } catch (e) {
+    const status = e.status
+    if (status === 401 || status === 403) return { state: null, error: 'scope' }
+    return { state: null, error: 'network' }
+  }
+}
+
+export async function saveGameStateToDrive(token, gameState) {
+  try {
+    const body = JSON.stringify(gameState)
+    let fileId
+
+    try {
+      fileId = await getGameStateFileId(token)
+    } catch (e) {
+      return { ok: false, status: e.status }
+    }
+
+    if (fileId) {
+      const res = await fetch(`${UPLOAD}/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { ...auth(token), 'Content-Type': 'application/json' },
+        body,
+      })
+      if (res.status === 404) {
+        localStorage.removeItem(GAME_STATE_FILE_ID_KEY)
+        return saveGameStateToDrive(token, gameState)
+      }
+      return { ok: res.ok, status: res.status }
+    } else {
+      const boundary = 'qm_boundary_005'
+      const metadata = JSON.stringify({ name: GAME_STATE_FILE_NAME, parents: ['appDataFolder'] })
+      const multipart = [
+        `--${boundary}`,
+        'Content-Type: application/json; charset=UTF-8',
+        '',
+        metadata,
+        `--${boundary}`,
+        'Content-Type: application/json',
+        '',
+        body,
+        `--${boundary}--`,
+      ].join('\r\n')
+
+      const res = await fetch(`${UPLOAD}/files?uploadType=multipart`, {
+        method: 'POST',
+        headers: { ...auth(token), 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body: multipart,
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.id) localStorage.setItem(GAME_STATE_FILE_ID_KEY, data.id)
       }
       return { ok: res.ok, status: res.status }
     }
