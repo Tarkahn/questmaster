@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 const KEYS = {
   points: 'qm_points',
+  coins: 'qm_coins',
   streak: 'qm_streak',
   bestStreak: 'qm_best_streak',
   lastCompletedDate: 'qm_last_completed',
@@ -17,6 +18,7 @@ export function computeGameStateMerge(local, drive) {
   const today = new Date().toISOString().slice(0, 10)
 
   const points = Math.max(local.points || 0, drive.points || 0)
+  const coins = Math.max(local.coins || 0, drive.coins || 0)
   const bestStreak = Math.max(local.bestStreak || 0, drive.bestStreak || 0)
 
   const localDate = local.lastCompletedDate || ''
@@ -53,7 +55,7 @@ export function computeGameStateMerge(local, drive) {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-HISTORY_LIMIT)
 
-  return { points, streak, bestStreak, lastCompletedDate, claimedEvents, history }
+  return { points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history }
 }
 
 function todayStr() {
@@ -90,6 +92,7 @@ function loadHistory() {
 function load() {
   return {
     points: Number(localStorage.getItem(KEYS.points) || 0),
+    coins: Number(localStorage.getItem(KEYS.coins) || 0),
     streak: Number(localStorage.getItem(KEYS.streak) || 0),
     bestStreak: Number(localStorage.getItem(KEYS.bestStreak) || 0),
     lastCompletedDate: localStorage.getItem(KEYS.lastCompletedDate) || null,
@@ -183,6 +186,14 @@ export function useGameState() {
     })
   }
 
+  function earnCoins(n) {
+    setState(prev => {
+      const coins = prev.coins + n
+      localStorage.setItem(KEYS.coins, String(coins))
+      return { ...prev, coins }
+    })
+  }
+
   function claimEvent(eventId, xp) {
     setState(prev => {
       const points = prev.points + xp
@@ -209,6 +220,7 @@ export function useGameState() {
   // Call computeGameStateMerge first, then pass the result here.
   function applyGameState(merged) {
     localStorage.setItem(KEYS.points, String(merged.points))
+    if (merged.coins !== undefined) localStorage.setItem(KEYS.coins, String(merged.coins))
     localStorage.setItem(KEYS.streak, String(merged.streak))
     localStorage.setItem(KEYS.bestStreak, String(merged.bestStreak))
     if (merged.lastCompletedDate) localStorage.setItem(KEYS.lastCompletedDate, merged.lastCompletedDate)
@@ -221,6 +233,7 @@ export function useGameState() {
     Object.values(KEYS).forEach(k => localStorage.removeItem(k))
     setState({
       points: 0,
+      coins: 0,
       streak: 0,
       bestStreak: 0,
       lastCompletedDate: null,
@@ -240,6 +253,7 @@ export function useGameState() {
     xpNeeded,
     xpPct: pct,
     completeTask,
+    earnCoins,
     claimEvent,
     resetStats,
     applyGameState,

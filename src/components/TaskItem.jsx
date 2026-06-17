@@ -3,7 +3,7 @@ import { TIER_INFO, cycleTier } from '../utils/difficulty'
 
 const REVEAL_MS = 10000
 
-export default function TaskItem({ task, themedTitle, difficulty = 'normal', onComplete, onDifficultyChange, onEdit }) {
+export default function TaskItem({ task, themedTitle, difficulty = 'normal', coinValue = 0, onComplete, onDifficultyChange, onEdit }) {
   const [phase, setPhase] = useState('idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
   const [earnedXP, setEarnedXP] = useState(null)
@@ -40,7 +40,7 @@ export default function TaskItem({ task, themedTitle, difficulty = 'normal', onC
         setDisplayNum(roll)
         setEarnedXP(total)
         setPhase('done')
-        onComplete(task.id, total)
+        onComplete(task.id, total, coinValue)
       }
     }, 55)
   }
@@ -106,6 +106,7 @@ export default function TaskItem({ task, themedTitle, difficulty = 'normal', onC
         </div>
       </div>
       {phase === 'done' && <span className="points-pop">+{earnedXP} XP</span>}
+      {phase === 'done' && coinValue > 0 && <span className="coins-pop">+{coinValue} 🪙</span>}
     </div>
   )
 }

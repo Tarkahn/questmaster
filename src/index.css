@@ -204,7 +204,7 @@ body {
 
 .stats-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 12px;
 }
 
@@ -213,15 +213,16 @@ body {
   background: var(--bg-card2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px 8px;
+  padding: 10px 4px;
   text-align: center;
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 
 .stat-value {
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 800;
   color: var(--text);
   line-height: 1;
@@ -572,6 +573,28 @@ body {
   0%   { opacity: 1; transform: translateY(0) scale(1); }
   30%  { opacity: 1; transform: translateY(-8px) scale(1.2); }
   100% { opacity: 0; transform: translateY(-28px) scale(0.8); }
+}
+
+.coins-pop {
+  position: absolute;
+  right: 14px;
+  top: 28px;
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  animation: coinsFly 1.1s ease 0.25s forwards;
+  pointer-events: none;
+}
+
+.coins-pop--rune {
+  top: 30px;
+}
+
+@keyframes coinsFly {
+  0%   { opacity: 0; transform: translateY(0) scale(0.85); }
+  15%  { opacity: 1; transform: translateY(-5px) scale(1.15); }
+  100% { opacity: 0; transform: translateY(-26px) scale(0.8); }
 }
 
 /* ── Event Item ── */

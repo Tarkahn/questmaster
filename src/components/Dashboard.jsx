@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, createTask, createEvent, deleteTask, updateTask, deleteEvent, updateEvent } from '../utils/api'
+import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
@@ -34,6 +35,9 @@ export default function Dashboard({ token, onSignOut }) {
   const [showCreateMission, setShowCreateMission] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [editingEvent, setEditingEvent] = useState(null)
+  const [taskSeenMap, setTaskSeenMap] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('qm_task_seen') || '{}') } catch { return {} }
+  })
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
   const [showSettings, setShowSettings] = useState(false)
@@ -44,15 +48,15 @@ export default function Dashboard({ token, onSignOut }) {
   const [view, setView] = useState('quests') // quests | chronicle
 
   const {
-    points, streak, bestStreak, lastCompletedDate, completedToday,
+    points, coins, streak, bestStreak, lastCompletedDate, completedToday,
     level, xpInto, xpNeeded, xpPct,
-    claimedEvents, completeTask, claimEvent,
+    claimedEvents, completeTask, earnCoins, claimEvent,
     history, resetStats, applyGameState,
   } = useGameState()
   const prevLevelRef = useRef(null)
-  const gameStateRef = useRef({ points, streak, bestStreak, lastCompletedDate, claimedEvents, history })
+  const gameStateRef = useRef({ points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history })
   useEffect(() => {
-    gameStateRef.current = { points, streak, bestStreak, lastCompletedDate, claimedEvents, history }
+    gameStateRef.current = { points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history }
   })
   const handleSignOut = useCallback(onSignOut, [onSignOut])
 
@@ -192,6 +196,18 @@ export default function Dashboard({ token, onSignOut }) {
       ])
       setTasks(t)
       setEvents(e)
+
+      // Record the first time each task is seen so coin decay can be computed.
+      const today = new Date().toISOString().slice(0, 10)
+      const seen = (() => {
+        try { return JSON.parse(localStorage.getItem('qm_task_seen') || '{}') } catch { return {} }
+      })()
+      let changed = false
+      for (const task of t) {
+        if (!seen[task.id]) { seen[task.id] = today; changed = true }
+      }
+      if (changed) localStorage.setItem('qm_task_seen', JSON.stringify(seen))
+      setTaskSeenMap({ ...seen })
       setLoading(false)
 
       const includeNotes = settings.sendNotesToLlm
@@ -227,12 +243,13 @@ export default function Dashboard({ token, onSignOut }) {
 
   useEffect(() => { loadTasksAndEvents() }, [loadTasksAndEvents])
 
-  async function handleComplete(taskId, xp) {
+  async function handleComplete(taskId, xp, coinValue) {
     try {
       await markTaskComplete(token, taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
       completeTask(xp)
-      setToast(`⚔️ Quest Complete! +${xp} XP`)
+      earnCoins(coinValue)
+      setToast(`⚔️ Quest Complete! +${xp} XP  +${coinValue} 🪙`)
     } catch (err) {
       console.error('Failed to complete task:', err)
     }
@@ -359,9 +376,10 @@ export default function Dashboard({ token, onSignOut }) {
     }
   }
 
-  function handleClaim(eventId, xp) {
+  function handleClaim(eventId, xp, coinValue) {
     claimEvent(eventId, xp)
-    setToast(`🔮 Mission Claimed! +${xp} XP`)
+    earnCoins(coinValue)
+    setToast(`🔮 Mission Claimed! +${xp} XP  +${coinValue} 🪙`)
   }
 
   function isEventClaimed(eventId) {
@@ -561,6 +579,10 @@ export default function Dashboard({ token, onSignOut }) {
             <span className="stat-value stat-value--gold">{bestStreak}</span>
             <span className="stat-label">🏆 Best</span>
           </div>
+          <div className="stat-card">
+            <span className="stat-value stat-value--gold">{coins}</span>
+            <span className="stat-label">🪙 Coins</span>
+          </div>
         </div>
         <div className="xp-bar-wrap">
           <div className="xp-bar-track">
@@ -608,6 +630,7 @@ export default function Dashboard({ token, onSignOut }) {
                       task={task}
                       themedTitle={themedTitles[task.id]}
                       difficulty={getEffectiveDifficulty(task.id)}
+                      coinValue={computeCoins(task.id, getEffectiveDifficulty(task.id), taskSeenMap)}
                       onComplete={handleComplete}
                       onDifficultyChange={handleDifficultyChange}
                       onEdit={() => setEditingTask(task)}
@@ -632,6 +655,7 @@ export default function Dashboard({ token, onSignOut }) {
                       themedTitle={themedTitles[event.id]}
                       claimed={isEventClaimed(event.id)}
                       difficulty={getEffectiveDifficulty(event.id)}
+                      coinValue={BASE_COIN_VALUE[getEffectiveDifficulty(event.id)] || BASE_COIN_VALUE.normal}
                       onClaim={handleClaim}
                       onDifficultyChange={handleDifficultyChange}
                       onEdit={() => setEditingEvent(event)}
