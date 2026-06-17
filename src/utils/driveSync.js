@@ -10,6 +10,8 @@ const SETTINGS_FILE_NAME = 'questmaster-settings.json'
 const SETTINGS_FILE_ID_KEY = 'qm_drive_settings_id'
 const GAME_STATE_FILE_NAME = 'questmaster-gamestate.json'
 const GAME_STATE_FILE_ID_KEY = 'qm_drive_gamestate_id'
+const THEME_CACHE_FILE_NAME = 'questmaster-themes.json'
+const THEME_CACHE_FILE_ID_KEY = 'qm_drive_themes_id'
 
 function auth(token) {
   return { Authorization: `Bearer ${token}` }
@@ -455,6 +457,70 @@ export async function saveGameStateToDrive(token, gameState) {
   } catch {
     return { ok: false }
   }
+}
+
+async function findThemeCacheFileId(token) {
+  const params = new URLSearchParams({
+    spaces: 'appDataFolder',
+    q: `name='${THEME_CACHE_FILE_NAME}'`,
+    fields: 'files(id)',
+    orderBy: 'createdTime',
+  })
+  const res = await fetch(`${DRIVE}/files?${params}`, { headers: auth(token) })
+  if (!res.ok) throw Object.assign(new Error(`Drive list failed: ${res.status}`), { status: res.status })
+  const data = await res.json()
+  return data.files?.[0]?.id || null
+}
+
+async function getThemeCacheFileId(token) {
+  const id = await findThemeCacheFileId(token)
+  if (id) localStorage.setItem(THEME_CACHE_FILE_ID_KEY, id)
+  else localStorage.removeItem(THEME_CACHE_FILE_ID_KEY)
+  return id
+}
+
+export async function loadThemeCache(token) {
+  try {
+    const fileId = await getThemeCacheFileId(token)
+    if (!fileId) return { cache: null, error: null }
+    const res = await fetch(`${DRIVE}/files/${fileId}?alt=media`, { headers: auth(token) })
+    if (res.status === 404) { localStorage.removeItem(THEME_CACHE_FILE_ID_KEY); return { cache: null, error: null } }
+    if (!res.ok) throw Object.assign(new Error(`Drive read failed: ${res.status}`), { status: res.status })
+    const cache = await res.json()
+    return { cache: cache && typeof cache === 'object' ? cache : null, error: null }
+  } catch (e) {
+    const status = e.status
+    if (status === 401 || status === 403) return { cache: null, error: 'scope' }
+    return { cache: null, error: 'network' }
+  }
+}
+
+export async function saveThemeCache(token, cache) {
+  try {
+    const body = JSON.stringify(cache)
+    let fileId = await getThemeCacheFileId(token)
+    if (fileId) {
+      const res = await fetch(`${UPLOAD}/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { ...auth(token), 'Content-Type': 'application/json' },
+        body,
+      })
+      if (res.status === 404) { localStorage.removeItem(THEME_CACHE_FILE_ID_KEY); return saveThemeCache(token, cache) }
+    } else {
+      const boundary = 'qm_boundary_006'
+      const metadata = JSON.stringify({ name: THEME_CACHE_FILE_NAME, parents: ['appDataFolder'] })
+      const multipart = [
+        `--${boundary}`, 'Content-Type: application/json; charset=UTF-8', '', metadata,
+        `--${boundary}`, 'Content-Type: application/json', '', body, `--${boundary}--`,
+      ].join('\r\n')
+      const res = await fetch(`${UPLOAD}/files?uploadType=multipart`, {
+        method: 'POST',
+        headers: { ...auth(token), 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body: multipart,
+      })
+      if (res.ok) { const data = await res.json(); if (data.id) localStorage.setItem(THEME_CACHE_FILE_ID_KEY, data.id) }
+    }
+  } catch {}
 }
 
 // Returns { ok: boolean, status?: number }

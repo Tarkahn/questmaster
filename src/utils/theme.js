@@ -34,6 +34,28 @@ export function clearThemeCache() {
   } catch {}
 }
 
+// Returns all theme/diff cache entries as a flat object for Drive sync.
+export function getThemeCacheAll() {
+  try {
+    const result = {}
+    Object.keys(localStorage)
+      .filter(k => k.startsWith(THEME_PREFIX) || k.startsWith(DIFF_PREFIX))
+      .forEach(k => { result[k] = localStorage.getItem(k) })
+    return result
+  } catch { return {} }
+}
+
+// Merges Drive theme cache into local: Drive fills missing keys, local wins conflicts.
+// This ensures both devices converge on the same themed titles without overwriting
+// titles the user has already seen on this device.
+export function applyThemeCache(driveCache) {
+  try {
+    Object.entries(driveCache).forEach(([k, v]) => {
+      if (!localStorage.getItem(k)) localStorage.setItem(k, v)
+    })
+  } catch {}
+}
+
 // items: [{ id, title, notes? }]
 // Returns { themes: {id: string}, suggestedDifficulties: {id: tier} }
 export async function themeItems(items, glossary) {

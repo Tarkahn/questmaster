@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, createTask, createEvent } from '../utils/api'
-import { themeItems, clearThemeCache } from '../utils/theme'
+import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
-import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive } from '../utils/driveSync'
+import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache } from '../utils/driveSync'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
 import { useGameState, computeGameStateMerge } from '../hooks/useGameState'
@@ -46,9 +46,9 @@ export default function Dashboard({ token, onSignOut }) {
     history, resetStats, applyGameState,
   } = useGameState()
   const prevLevelRef = useRef(null)
-  const gameStateRef = useRef({ points, streak, bestStreak, lastCompletedDate, history })
+  const gameStateRef = useRef({ points, streak, bestStreak, lastCompletedDate, claimedEvents, history })
   useEffect(() => {
-    gameStateRef.current = { points, streak, bestStreak, lastCompletedDate, history }
+    gameStateRef.current = { points, streak, bestStreak, lastCompletedDate, claimedEvents, history }
   })
   const handleSignOut = useCallback(onSignOut, [onSignOut])
 
@@ -58,6 +58,27 @@ export default function Dashboard({ token, onSignOut }) {
     }
     prevLevelRef.current = level
   }, [level])
+
+  // One-time theme cache sync on mount: merge Drive cache into local so both
+  // devices show the same D&D themed titles. Local wins on conflicts so the
+  // user never sees a title change mid-session.
+  useEffect(() => {
+    async function syncThemes() {
+      try {
+        const { cache: driveCache } = await loadThemeCache(token)
+        const localCache = getThemeCacheAll()
+        if (driveCache) {
+          // Merge: Drive fills keys missing locally, local keeps its own
+          const merged = { ...driveCache, ...localCache }
+          applyThemeCache(driveCache)
+          await saveThemeCache(token, merged)
+        } else if (Object.keys(localCache).length > 0) {
+          await saveThemeCache(token, localCache)
+        }
+      } catch {}
+    }
+    syncThemes()
+  }, [token])
 
   // Sync habits + difficulties + glossary from Drive — on mount, every 15s,
   // and whenever this device regains focus/visibility.

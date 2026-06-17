@@ -14,6 +14,8 @@ const HISTORY_LIMIT = 400 // ~13 months of daily snapshots
 // Pure merge: takes two game state objects, returns the merged result.
 // Exported so Dashboard can compute the merge before touching Drive or React state.
 export function computeGameStateMerge(local, drive) {
+  const today = new Date().toISOString().slice(0, 10)
+
   const points = Math.max(local.points || 0, drive.points || 0)
   const bestStreak = Math.max(local.bestStreak || 0, drive.bestStreak || 0)
 
@@ -23,6 +25,16 @@ export function computeGameStateMerge(local, drive) {
     ? (local.lastCompletedDate || null)
     : (drive.lastCompletedDate || null)
   const streak = localDate >= driveDate ? (local.streak || 0) : (drive.streak || 0)
+
+  // Union today's claimed event IDs from both devices so a claim on one
+  // device immediately prevents a double-claim on the other.
+  const localClaimed = local.claimedEvents || { date: today, ids: [] }
+  const driveClaimed = drive.claimedEvents || { date: today, ids: [] }
+  const mergedIds = [
+    ...(localClaimed.date === today ? localClaimed.ids : []),
+    ...(driveClaimed.date === today ? driveClaimed.ids : []),
+  ]
+  const claimedEvents = { date: today, ids: [...new Set(mergedIds)] }
 
   const historyMap = {}
   for (const row of [...(local.history || []), ...(drive.history || [])]) {
@@ -41,7 +53,7 @@ export function computeGameStateMerge(local, drive) {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-HISTORY_LIMIT)
 
-  return { points, streak, bestStreak, lastCompletedDate, history }
+  return { points, streak, bestStreak, lastCompletedDate, claimedEvents, history }
 }
 
 function todayStr() {
@@ -201,6 +213,7 @@ export function useGameState() {
     localStorage.setItem(KEYS.bestStreak, String(merged.bestStreak))
     if (merged.lastCompletedDate) localStorage.setItem(KEYS.lastCompletedDate, merged.lastCompletedDate)
     localStorage.setItem(KEYS.history, JSON.stringify(merged.history))
+    if (merged.claimedEvents) localStorage.setItem(KEYS.claimedEvents, JSON.stringify(merged.claimedEvents))
     setState(prev => ({ ...prev, ...merged }))
   }
 
