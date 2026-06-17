@@ -6,7 +6,7 @@ import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits
 import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive } from '../utils/driveSync'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
-import { useGameState } from '../hooks/useGameState'
+import { useGameState, computeGameStateMerge } from '../hooks/useGameState'
 import TaskItem from './TaskItem'
 import EventItem from './EventItem'
 import BossCard from './BossCard'
@@ -43,7 +43,7 @@ export default function Dashboard({ token, onSignOut }) {
     points, streak, bestStreak, lastCompletedDate, completedToday,
     level, xpInto, xpNeeded, xpPct,
     claimedEvents, completeTask, claimEvent,
-    history, resetStats, mergeGameState,
+    history, resetStats, applyGameState,
   } = useGameState()
   const prevLevelRef = useRef(null)
   const gameStateRef = useRef({ points, streak, bestStreak, lastCompletedDate, history })
@@ -115,15 +115,15 @@ export default function Dashboard({ token, onSignOut }) {
       }
 
       if (driveGameState) {
-        // Merge Drive state with local, then write the merged result back so
-        // the other device sees it on its next poll.
-        mergeGameState(driveGameState, merged => {
-          saveGameStateToDrive(token, merged)
-        })
+        // Compute merge outside React state so we can write it to Drive
+        // synchronously before applying to state — no side effects in setState.
+        const merged = computeGameStateMerge(gameStateRef.current, driveGameState)
+        await saveGameStateToDrive(token, merged)
+        applyGameState(merged)
       } else {
-        // No Drive file yet — bootstrap it with the current local state so
-        // the other device can read it on its next poll.
-        saveGameStateToDrive(token, gameStateRef.current)
+        // No Drive file yet — bootstrap from local state so the other device
+        // can read it on its next poll.
+        await saveGameStateToDrive(token, gameStateRef.current)
       }
     }
 

@@ -11,6 +11,39 @@ const KEYS = {
 
 const HISTORY_LIMIT = 400 // ~13 months of daily snapshots
 
+// Pure merge: takes two game state objects, returns the merged result.
+// Exported so Dashboard can compute the merge before touching Drive or React state.
+export function computeGameStateMerge(local, drive) {
+  const points = Math.max(local.points || 0, drive.points || 0)
+  const bestStreak = Math.max(local.bestStreak || 0, drive.bestStreak || 0)
+
+  const localDate = local.lastCompletedDate || ''
+  const driveDate = drive.lastCompletedDate || ''
+  const lastCompletedDate = localDate >= driveDate
+    ? (local.lastCompletedDate || null)
+    : (drive.lastCompletedDate || null)
+  const streak = localDate >= driveDate ? (local.streak || 0) : (drive.streak || 0)
+
+  const historyMap = {}
+  for (const row of [...(local.history || []), ...(drive.history || [])]) {
+    const e = historyMap[row.date]
+    historyMap[row.date] = e ? {
+      date: row.date,
+      xpEarned: Math.max(e.xpEarned || 0, row.xpEarned || 0),
+      tasksCompleted: Math.max(e.tasksCompleted || 0, row.tasksCompleted || 0),
+      eventsClaimed: Math.max(e.eventsClaimed || 0, row.eventsClaimed || 0),
+      xpTotal: Math.max(e.xpTotal || 0, row.xpTotal || 0),
+      level: Math.max(e.level || 1, row.level || 1),
+      streak: Math.max(e.streak || 0, row.streak || 0),
+    } : { ...row }
+  }
+  const history = Object.values(historyMap)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-HISTORY_LIMIT)
+
+  return { points, streak, bestStreak, lastCompletedDate, history }
+}
+
 function todayStr() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -160,45 +193,15 @@ export function useGameState() {
     })
   }
 
-  function mergeGameState(drive, onMerged) {
-    setState(local => {
-      const points = Math.max(local.points, drive.points || 0)
-      const bestStreak = Math.max(local.bestStreak, drive.bestStreak || 0)
-
-      // Whichever device has the more recent lastCompletedDate owns the streak value
-      const localDate = local.lastCompletedDate || ''
-      const driveDate = drive.lastCompletedDate || ''
-      const lastCompletedDate = localDate >= driveDate ? local.lastCompletedDate : (drive.lastCompletedDate || null)
-      const streak = localDate >= driveDate ? local.streak : (drive.streak || 0)
-
-      // Merge history: union of dates, take max per field per day
-      const historyMap = {}
-      for (const row of [...(local.history || []), ...(drive.history || [])]) {
-        const e = historyMap[row.date]
-        historyMap[row.date] = e ? {
-          date: row.date,
-          xpEarned: Math.max(e.xpEarned || 0, row.xpEarned || 0),
-          tasksCompleted: Math.max(e.tasksCompleted || 0, row.tasksCompleted || 0),
-          eventsClaimed: Math.max(e.eventsClaimed || 0, row.eventsClaimed || 0),
-          xpTotal: Math.max(e.xpTotal || 0, row.xpTotal || 0),
-          level: Math.max(e.level || 1, row.level || 1),
-          streak: Math.max(e.streak || 0, row.streak || 0),
-        } : { ...row }
-      }
-      const history = Object.values(historyMap)
-        .sort((a, b) => a.date.localeCompare(b.date))
-        .slice(-HISTORY_LIMIT)
-
-      localStorage.setItem(KEYS.points, String(points))
-      localStorage.setItem(KEYS.streak, String(streak))
-      localStorage.setItem(KEYS.bestStreak, String(bestStreak))
-      if (lastCompletedDate) localStorage.setItem(KEYS.lastCompletedDate, lastCompletedDate)
-      localStorage.setItem(KEYS.history, JSON.stringify(history))
-
-      const merged = { ...local, points, streak, bestStreak, lastCompletedDate, history }
-      if (onMerged) onMerged(merged)
-      return merged
-    })
+  // Applies a pre-computed merged game state to React state and localStorage.
+  // Call computeGameStateMerge first, then pass the result here.
+  function applyGameState(merged) {
+    localStorage.setItem(KEYS.points, String(merged.points))
+    localStorage.setItem(KEYS.streak, String(merged.streak))
+    localStorage.setItem(KEYS.bestStreak, String(merged.bestStreak))
+    if (merged.lastCompletedDate) localStorage.setItem(KEYS.lastCompletedDate, merged.lastCompletedDate)
+    localStorage.setItem(KEYS.history, JSON.stringify(merged.history))
+    setState(prev => ({ ...prev, ...merged }))
   }
 
   function resetStats() {
@@ -226,6 +229,6 @@ export function useGameState() {
     completeTask,
     claimEvent,
     resetStats,
-    mergeGameState,
+    applyGameState,
   }
 }
