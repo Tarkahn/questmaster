@@ -45,13 +45,15 @@ export function getThemeCacheAll() {
   } catch { return {} }
 }
 
-// Merges Drive theme cache into local: Drive fills missing keys, local wins conflicts.
-// This ensures both devices converge on the same themed titles without overwriting
-// titles the user has already seen on this device.
+// Applies Drive theme cache to local storage. Drive wins on conflicts so both
+// devices converge on the same themed titles — whichever device wrote to Drive
+// last becomes the canonical version for all devices.
 export function applyThemeCache(driveCache) {
   try {
     Object.entries(driveCache).forEach(([k, v]) => {
-      if (!localStorage.getItem(k)) localStorage.setItem(k, v)
+      if (k.startsWith(THEME_PREFIX) || k.startsWith(DIFF_PREFIX)) {
+        localStorage.setItem(k, v)
+      }
     })
   } catch {}
 }

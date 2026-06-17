@@ -1,8 +1,9 @@
 import { useState } from 'react'
 
-export default function SettingsModal({ settings, onSave, onClose }) {
+export default function SettingsModal({ settings, onSave, onReThemeAll, onClose }) {
   const [local, setLocal] = useState(settings)
   const [saving, setSaving] = useState(false)
+  const [retheming, setRetheming] = useState(false)
 
   function update(field, value) {
     setLocal(s => ({ ...s, [field]: value }))
@@ -14,6 +15,15 @@ export default function SettingsModal({ settings, onSave, onClose }) {
       await onSave(local)
     } catch {
       setSaving(false)
+    }
+  }
+
+  async function handleReTheme() {
+    setRetheming(true)
+    try {
+      await onReThemeAll()
+    } finally {
+      setRetheming(false)
     }
   }
 
@@ -38,6 +48,23 @@ export default function SettingsModal({ settings, onSave, onClose }) {
             onChange={e => update('sendNotesToLlm', e.target.checked)}
             disabled={saving}
           />
+        </label>
+
+        <label className="settings-row">
+          <div className="settings-row-text">
+            <div className="settings-row-label">Re-enchant all titles</div>
+            <div className="settings-row-desc">
+              Clears the D&amp;D theme cache on all devices and regenerates fresh titles
+              from the Scribe. Use when titles feel stale or devices are showing different names.
+            </div>
+          </div>
+          <button
+            className="settings-retheme-btn"
+            onClick={handleReTheme}
+            disabled={retheming || saving}
+          >
+            {retheming ? '✨ Working…' : '✨ Re-theme'}
+          </button>
         </label>
 
         <div className="modal-actions">

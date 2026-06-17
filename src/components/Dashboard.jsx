@@ -298,6 +298,35 @@ export default function Dashboard({ token, onSignOut }) {
     saveSettingsToDrive(token, next)
   }
 
+  async function handleReThemeAll() {
+    clearThemeCache()
+    await saveThemeCache(token, {})
+    setThemedTitles({})
+    setShowSettings(false)
+
+    const includeNotes = settings.sendNotesToLlm
+    const allItems = [
+      ...tasks.map(t => ({ id: t.id, title: t.title, notes: includeNotes ? t.notes : undefined })),
+      ...events.map(e => ({ id: e.id, title: e.summary || '', notes: includeNotes ? e.description : undefined })),
+    ].filter(item => item.title)
+
+    if (allItems.length > 0) {
+      setTheming(true)
+      try {
+        const { themes, suggestedDifficulties: suggested } = await themeItems(allItems, glossary)
+        setThemedTitles(themes)
+        setSuggestedDifficulties(suggested)
+        const newCache = getThemeCacheAll()
+        if (Object.keys(newCache).length > 0) saveThemeCache(token, newCache)
+        setToast('✨ All titles re-enchanted!')
+      } catch {
+        setToast('✨ Re-theme failed — try again.')
+      } finally {
+        setTheming(false)
+      }
+    }
+  }
+
   function handleClaim(eventId, xp) {
     claimEvent(eventId, xp)
     setToast(`🔮 Mission Claimed! +${xp} XP`)
@@ -446,6 +475,7 @@ export default function Dashboard({ token, onSignOut }) {
         <SettingsModal
           settings={settings}
           onSave={handleSaveSettings}
+          onReThemeAll={handleReThemeAll}
           onClose={() => setShowSettings(false)}
         />
       )}

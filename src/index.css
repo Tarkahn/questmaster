@@ -1560,3 +1560,23 @@ body {
   accent-color: var(--accent);
   cursor: pointer;
 }
+.settings-retheme-btn {
+  flex-shrink: 0;
+  background: rgba(124, 58, 237, 0.15);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent-light);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.settings-retheme-btn:hover {
+  background: rgba(124, 58, 237, 0.28);
+}
+.settings-retheme-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
