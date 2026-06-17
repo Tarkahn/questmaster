@@ -40,12 +40,16 @@ export default function Dashboard({ token, onSignOut }) {
   const [view, setView] = useState('quests') // quests | chronicle
 
   const {
-    points, streak, bestStreak, completedToday,
+    points, streak, bestStreak, lastCompletedDate, completedToday,
     level, xpInto, xpNeeded, xpPct,
     claimedEvents, completeTask, claimEvent,
     history, resetStats, mergeGameState,
   } = useGameState()
   const prevLevelRef = useRef(null)
+  const gameStateRef = useRef({ points, streak, bestStreak, lastCompletedDate, history })
+  useEffect(() => {
+    gameStateRef.current = { points, streak, bestStreak, lastCompletedDate, history }
+  })
   const handleSignOut = useCallback(onSignOut, [onSignOut])
 
   useEffect(() => {
@@ -111,7 +115,15 @@ export default function Dashboard({ token, onSignOut }) {
       }
 
       if (driveGameState) {
-        mergeGameState(driveGameState)
+        // Merge Drive state with local, then write the merged result back so
+        // the other device sees it on its next poll.
+        mergeGameState(driveGameState, merged => {
+          saveGameStateToDrive(token, merged)
+        })
+      } else {
+        // No Drive file yet — bootstrap it with the current local state so
+        // the other device can read it on its next poll.
+        saveGameStateToDrive(token, gameStateRef.current)
       }
     }
 
@@ -133,7 +145,8 @@ export default function Dashboard({ token, onSignOut }) {
     }
   }, [token])
 
-  // Write game state to Drive whenever XP changes (task/event completions and resets).
+  // Write game state to Drive immediately after each XP earn or reset so the
+  // other device picks it up on its next poll without waiting for our sync cycle.
   const prevPointsRef = useRef(null)
   useEffect(() => {
     if (prevPointsRef.current === null) {
@@ -142,7 +155,7 @@ export default function Dashboard({ token, onSignOut }) {
     }
     if (points !== prevPointsRef.current) {
       prevPointsRef.current = points
-      saveGameStateToDrive(token, { points, streak, bestStreak, lastCompletedDate, history })
+      saveGameStateToDrive(token, gameStateRef.current)
     }
   }, [points])
 

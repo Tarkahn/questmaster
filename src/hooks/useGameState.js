@@ -160,7 +160,7 @@ export function useGameState() {
     })
   }
 
-  function mergeGameState(drive) {
+  function mergeGameState(drive, onMerged) {
     setState(local => {
       const points = Math.max(local.points, drive.points || 0)
       const bestStreak = Math.max(local.bestStreak, drive.bestStreak || 0)
@@ -195,7 +195,9 @@ export function useGameState() {
       if (lastCompletedDate) localStorage.setItem(KEYS.lastCompletedDate, lastCompletedDate)
       localStorage.setItem(KEYS.history, JSON.stringify(history))
 
-      return { ...local, points, streak, bestStreak, lastCompletedDate, history }
+      const merged = { ...local, points, streak, bestStreak, lastCompletedDate, history }
+      if (onMerged) onMerged(merged)
+      return merged
     })
   }
 
