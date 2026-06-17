@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0f0f1a"/>
+  <!-- Outer glow ring -->
+  <polygon points="256,48 464,256 256,464 48,256" fill="none" stroke="#a78bfa" stroke-width="6" opacity="0.4"/>
+  <!-- Diamond body -->
+  <polygon points="256,72 440,256 256,440 72,256" fill="#7c3aed"/>
+  <!-- Diamond highlight -->
+  <polygon points="256,72 440,256 256,264" fill="#9d5ff5" opacity="0.5"/>
+  <!-- Inner diamond -->
+  <polygon points="256,140 372,256 256,372 140,256" fill="#5b21b6"/>
+  <!-- Gold center gem -->
+  <polygon points="256,192 304,256 256,320 208,256" fill="#f59e0b"/>
+  <!-- Gold highlight -->
+  <polygon points="256,192 304,256 256,224" fill="#fcd34d" opacity="0.6"/>
+</svg>
