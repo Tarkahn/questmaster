@@ -3,7 +3,7 @@ import { TIER_INFO, cycleTier } from '../utils/difficulty'
 
 const REVEAL_MS = 10000
 
-export default function TaskItem({ task, themedTitle, difficulty = 'normal', onComplete, onDifficultyChange }) {
+export default function TaskItem({ task, themedTitle, difficulty = 'normal', onComplete, onDifficultyChange, onEdit }) {
   const [phase, setPhase] = useState('idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
   const [earnedXP, setEarnedXP] = useState(null)
@@ -93,6 +93,16 @@ export default function TaskItem({ task, themedTitle, difficulty = 'normal', onC
           >
             {tier.emoji} {tier.label}{tier.d20Bonus > 0 ? ` +${tier.d20Bonus}` : ''}
           </button>
+          {phase === 'idle' && onEdit && (
+            <button
+              type="button"
+              className="item-edit-btn"
+              onClick={e => { e.stopPropagation(); onEdit() }}
+              aria-label="Edit quest"
+            >
+              ✏️
+            </button>
+          )}
         </div>
       </div>
       {phase === 'done' && <span className="points-pop">+{earnedXP} XP</span>}

@@ -75,6 +75,65 @@ export async function createEvent(token, { title, date, start, end, allDay, note
   return res.json()
 }
 
+export async function deleteTask(token, taskId) {
+  const res = await fetch(
+    `${BASE}/tasks/v1/lists/@default/tasks/${taskId}`,
+    { method: 'DELETE', headers: authHeaders(token) }
+  )
+  if (!res.ok) throw new Error(`Failed to delete task: ${res.status}`)
+}
+
+export async function updateTask(token, taskId, { title, due, notes }) {
+  const body = { title }
+  body.due = due ? new Date(`${due}T00:00:00Z`).toISOString() : null
+  body.notes = notes || ''
+
+  const res = await fetch(
+    `${BASE}/tasks/v1/lists/@default/tasks/${taskId}`,
+    {
+      method: 'PATCH',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  )
+  if (!res.ok) throw new Error(`Failed to update task: ${res.status}`)
+  return res.json()
+}
+
+export async function deleteEvent(token, eventId) {
+  const res = await fetch(
+    `${BASE}/calendar/v3/calendars/primary/events/${eventId}`,
+    { method: 'DELETE', headers: authHeaders(token) }
+  )
+  if (!res.ok) throw new Error(`Failed to delete event: ${res.status}`)
+}
+
+export async function updateEvent(token, eventId, { title, date, start, end, allDay, notes }) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const body = { summary: title, description: notes || '' }
+
+  if (allDay) {
+    const endDate = new Date(`${date}T00:00:00`)
+    endDate.setDate(endDate.getDate() + 1)
+    body.start = { date }
+    body.end = { date: endDate.toISOString().slice(0, 10) }
+  } else {
+    body.start = { dateTime: `${date}T${start}:00`, timeZone }
+    body.end   = { dateTime: `${date}T${end}:00`,   timeZone }
+  }
+
+  const res = await fetch(
+    `${BASE}/calendar/v3/calendars/primary/events/${eventId}`,
+    {
+      method: 'PATCH',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  )
+  if (!res.ok) throw new Error(`Failed to update event: ${res.status}`)
+  return res.json()
+}
+
 export async function fetchTodaysEvents(token) {
   const start = new Date()
   start.setHours(0, 0, 0, 0)

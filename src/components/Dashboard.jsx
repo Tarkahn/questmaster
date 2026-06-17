@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, createTask, createEvent } from '../utils/api'
+import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, createTask, createEvent, deleteTask, updateTask, deleteEvent, updateEvent } from '../utils/api'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
@@ -13,6 +13,8 @@ import BossCard from './BossCard'
 import CreateHabitModal from './CreateHabitModal'
 import CreateQuestModal from './CreateQuestModal'
 import CreateMissionModal from './CreateMissionModal'
+import EditQuestModal from './EditQuestModal'
+import EditMissionModal from './EditMissionModal'
 import GlossaryModal from './GlossaryModal'
 import SettingsModal from './SettingsModal'
 import Chronicle from './Chronicle'
@@ -30,6 +32,8 @@ export default function Dashboard({ token, onSignOut }) {
   const [showCreateHabit, setShowCreateHabit] = useState(false)
   const [showCreateQuest, setShowCreateQuest] = useState(false)
   const [showCreateMission, setShowCreateMission] = useState(false)
+  const [editingTask, setEditingTask] = useState(null)
+  const [editingEvent, setEditingEvent] = useState(null)
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
   const [showSettings, setShowSettings] = useState(false)
@@ -248,6 +252,34 @@ export default function Dashboard({ token, onSignOut }) {
     loadTasksAndEvents()
   }
 
+  async function handleSaveTask(taskId, data) {
+    await updateTask(token, taskId, data)
+    setEditingTask(null)
+    setToast('✏️ Quest updated.')
+    loadTasksAndEvents()
+  }
+
+  async function handleDeleteTask(taskId) {
+    await deleteTask(token, taskId)
+    setEditingTask(null)
+    setTasks(prev => prev.filter(t => t.id !== taskId))
+    setToast('🗑 Quest removed.')
+  }
+
+  async function handleSaveEvent(eventId, data) {
+    await updateEvent(token, eventId, data)
+    setEditingEvent(null)
+    setToast('✏️ Mission updated.')
+    loadTasksAndEvents()
+  }
+
+  async function handleDeleteEvent(eventId) {
+    await deleteEvent(token, eventId)
+    setEditingEvent(null)
+    setEvents(prev => prev.filter(e => e.id !== eventId))
+    setToast('🗑 Mission removed.')
+  }
+
   function getEffectiveDifficulty(id) {
     return getDifficulty(id, difficultyMemory) || suggestedDifficulties[id] || 'normal'
   }
@@ -464,6 +496,22 @@ export default function Dashboard({ token, onSignOut }) {
           onCreate={handleCreateMission}
         />
       )}
+      {editingTask && (
+        <EditQuestModal
+          task={editingTask}
+          onClose={() => setEditingTask(null)}
+          onSave={handleSaveTask}
+          onDelete={handleDeleteTask}
+        />
+      )}
+      {editingEvent && (
+        <EditMissionModal
+          event={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onSave={handleSaveEvent}
+          onDelete={handleDeleteEvent}
+        />
+      )}
       {showGlossary && (
         <GlossaryModal
           glossary={glossary}
@@ -562,6 +610,7 @@ export default function Dashboard({ token, onSignOut }) {
                       difficulty={getEffectiveDifficulty(task.id)}
                       onComplete={handleComplete}
                       onDifficultyChange={handleDifficultyChange}
+                      onEdit={() => setEditingTask(task)}
                     />
                   ))
               }
@@ -585,6 +634,7 @@ export default function Dashboard({ token, onSignOut }) {
                       difficulty={getEffectiveDifficulty(event.id)}
                       onClaim={handleClaim}
                       onDifficultyChange={handleDifficultyChange}
+                      onEdit={() => setEditingEvent(event)}
                     />
                   ))
               }

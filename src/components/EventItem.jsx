@@ -3,7 +3,7 @@ import { TIER_INFO, cycleTier } from '../utils/difficulty'
 
 const REVEAL_MS = 10000
 
-export default function EventItem({ event, themedTitle, claimed, difficulty = 'normal', onClaim, onDifficultyChange }) {
+export default function EventItem({ event, themedTitle, claimed, difficulty = 'normal', onClaim, onDifficultyChange, onEdit }) {
   const [phase, setPhase] = useState(claimed ? 'done' : 'idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
   const [earnedXP, setEarnedXP] = useState(null)
@@ -90,14 +90,26 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
         >
           {displayTitle}
         </button>
-        <button
-          className={`difficulty-badge difficulty-badge--${difficulty}`}
-          onClick={handleDifficultyClick}
-          disabled={phase !== 'idle'}
-          aria-label={`Difficulty: ${tier.label}. Tap to change.`}
-        >
-          {tier.emoji} {tier.label}{tier.d10Bonus > 0 ? ` +${tier.d10Bonus}` : ''}
-        </button>
+        <div className="event-meta">
+          <button
+            className={`difficulty-badge difficulty-badge--${difficulty}`}
+            onClick={handleDifficultyClick}
+            disabled={phase !== 'idle'}
+            aria-label={`Difficulty: ${tier.label}. Tap to change.`}
+          >
+            {tier.emoji} {tier.label}{tier.d10Bonus > 0 ? ` +${tier.d10Bonus}` : ''}
+          </button>
+          {phase === 'idle' && onEdit && (
+            <button
+              type="button"
+              className="item-edit-btn"
+              onClick={e => { e.stopPropagation(); onEdit() }}
+              aria-label="Edit mission"
+            >
+              ✏️
+            </button>
+          )}
+        </div>
       </div>
       {phase === 'done' && <span className="points-pop points-pop--rune">+{earnedXP} XP</span>}
     </div>

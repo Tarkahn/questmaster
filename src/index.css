@@ -632,8 +632,8 @@ body {
   color: var(--text-muted);
 }
 
-.event-content .difficulty-badge {
-  margin-top: 5px;
+.event-meta .difficulty-badge {
+  margin-top: 0;
 }
 
 /* ── Rune Seal Button ── */
@@ -1145,6 +1145,58 @@ body {
 .modal-actions-right {
   display: flex;
   gap: 8px;
+}
+
+/* Delete button inside edit modals */
+.modal-btn--delete {
+  flex: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  background: transparent;
+  border: 1px solid rgba(180, 60, 60, 0.4);
+  color: #c07070;
+}
+.modal-btn--delete:hover:not(:disabled) {
+  background: rgba(180, 60, 60, 0.12);
+}
+.modal-btn--delete.modal-btn--confirm {
+  border-color: rgba(200, 60, 60, 0.7);
+  background: rgba(180, 60, 60, 0.18);
+  color: #e07878;
+}
+.modal-btn--delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ✏️ Edit button on task/event items */
+.item-edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  opacity: 0.35;
+  padding: 1px 4px;
+  border-radius: 4px;
+  transition: opacity 0.15s;
+  color: inherit;
+  line-height: 1;
+  margin-left: auto;
+}
+.item-edit-btn:hover {
+  opacity: 0.85;
+}
+
+/* event-meta row (difficulty + edit button for missions) */
+.event-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
 }
 
 /* ── Glossary button in header ── */
