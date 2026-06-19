@@ -1,5 +1,4 @@
 import { CLASSES } from '../utils/character'
-import { ClassSVG } from '../utils/character'
 
 const SLOT_LABELS = {
   weapon: '⚔️ Weapon',
@@ -15,7 +14,9 @@ export default function CharacterView({ character, level, coins, points, bossesD
     <div className="character-view">
       <div className="character-portrait">
         <div className="character-silhouette">
-          <ClassSVG classId={character?.class} size={120} />
+          {character?.class && (
+            <img src={`/portraits/${character.class}.jpg`} alt={cls?.name} className="character-portrait-img" />
+          )}
         </div>
         <div className="character-class-name">
           {cls ? `${cls.emoji} ${cls.name}` : '—'}

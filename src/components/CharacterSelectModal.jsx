@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CLASSES, CLASS_ORDER, ClassSVG } from '../utils/character'
+import { CLASSES, CLASS_ORDER } from '../utils/character'
 
 export default function CharacterSelectModal({ currentClass, onSelect, onClose }) {
   const [chosen, setChosen] = useState(currentClass || null)
@@ -30,7 +30,7 @@ export default function CharacterSelectModal({ currentClass, onSelect, onClose }
                 disabled={saving}
               >
                 <div className="class-card-icon">
-                  <ClassSVG classId={id} size={56} />
+                  <img src={`/portraits/${id}.jpg`} alt={cls.name} className="class-card-portrait" />
                 </div>
                 <div className="class-card-body">
                   <div className="class-card-name">{cls.emoji} {cls.name}</div>

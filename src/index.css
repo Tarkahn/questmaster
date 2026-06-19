@@ -1708,13 +1708,21 @@ body {
   flex-shrink: 0;
   width: 56px;
   height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent-light);
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  background: var(--bg-card2);
 }
 .class-card--selected .class-card-icon {
-  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.class-card-portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
 }
 
 .class-card-body {
@@ -1769,13 +1777,18 @@ body {
 .character-silhouette {
   width: 120px;
   height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(124, 58, 237, 0.1);
   border: 2px solid var(--accent);
   border-radius: 50%;
-  color: var(--accent-light);
+  overflow: hidden;
+  background: var(--bg-card2);
+}
+
+.character-portrait-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
 }
 
 .character-class-name {
