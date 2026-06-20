@@ -218,15 +218,35 @@ export function useGameState() {
 
   // Applies a pre-computed merged game state to React state and localStorage.
   // Call computeGameStateMerge first, then pass the result here.
+  // Uses setState(prev=>) so it always compares against live React state,
+  // preventing a stale gameStateRef from letting Drive overwrite a completion
+  // that happened between the last ref update and the sync running.
   function applyGameState(merged) {
-    localStorage.setItem(KEYS.points, String(merged.points))
-    if (merged.coins !== undefined) localStorage.setItem(KEYS.coins, String(merged.coins))
-    localStorage.setItem(KEYS.streak, String(merged.streak))
-    localStorage.setItem(KEYS.bestStreak, String(merged.bestStreak))
-    if (merged.lastCompletedDate) localStorage.setItem(KEYS.lastCompletedDate, merged.lastCompletedDate)
-    localStorage.setItem(KEYS.history, JSON.stringify(merged.history))
-    if (merged.claimedEvents) localStorage.setItem(KEYS.claimedEvents, JSON.stringify(merged.claimedEvents))
-    setState(prev => ({ ...prev, ...merged }))
+    setState(prev => {
+      const localDate = prev.lastCompletedDate || ''
+      const mergedDate = merged.lastCompletedDate || ''
+      const useLocal = localDate > mergedDate
+
+      const next = {
+        ...prev,
+        ...merged,
+        points: Math.max(prev.points, merged.points),
+        coins: Math.max(prev.coins ?? 0, merged.coins ?? 0),
+        bestStreak: Math.max(prev.bestStreak, merged.bestStreak),
+        lastCompletedDate: useLocal ? prev.lastCompletedDate : merged.lastCompletedDate,
+        streak: useLocal ? prev.streak : merged.streak,
+      }
+
+      localStorage.setItem(KEYS.points, String(next.points))
+      localStorage.setItem(KEYS.coins, String(next.coins))
+      localStorage.setItem(KEYS.streak, String(next.streak))
+      localStorage.setItem(KEYS.bestStreak, String(next.bestStreak))
+      if (next.lastCompletedDate) localStorage.setItem(KEYS.lastCompletedDate, next.lastCompletedDate)
+      localStorage.setItem(KEYS.history, JSON.stringify(next.history))
+      if (next.claimedEvents) localStorage.setItem(KEYS.claimedEvents, JSON.stringify(next.claimedEvents))
+
+      return next
+    })
   }
 
   function resetStats() {
