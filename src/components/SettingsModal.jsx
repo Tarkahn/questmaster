@@ -11,35 +11,27 @@ export default function SettingsModal({ settings, onSave, onReThemeAll, onClose 
 
   async function handleSave() {
     setSaving(true)
-    try {
-      await onSave(local)
-    } catch {
-      setSaving(false)
-    }
+    try { await onSave(local) } catch { setSaving(false) }
   }
 
   async function handleReTheme() {
     setRetheming(true)
-    try {
-      await onReThemeAll()
-    } finally {
-      setRetheming(false)
-    }
+    try { await onReThemeAll() } finally { setRetheming(false) }
   }
+
+  const sfxPct = Math.round((local.sfxVolume ?? 0.7) * 100)
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card" onClick={e => e.stopPropagation()}>
         <h2 className="modal-title">⚙️ Settings</h2>
-        <p className="modal-sub">Synced across your devices.</p>
 
-        <label className="settings-row">
-          <div className="settings-row-text">
-            <div className="settings-row-label">Send notes to the scribe</div>
-            <div className="settings-row-desc">
-              Include task and event notes when theming. Produces more accurate D&amp;D conversions,
-              but the LLM sees more of your personal text.
-            </div>
+        <div className="settings-section-label">Scribe</div>
+
+        <div className="settings-row-compact">
+          <div className="settings-row-compact-left">
+            <span className="settings-label-sm">Send notes to scribe</span>
+            <span className="settings-desc-sm">Include task notes when generating D&amp;D titles</span>
           </div>
           <input
             type="checkbox"
@@ -48,29 +40,39 @@ export default function SettingsModal({ settings, onSave, onReThemeAll, onClose 
             onChange={e => update('sendNotesToLlm', e.target.checked)}
             disabled={saving}
           />
-        </label>
+        </div>
 
-        <label className="settings-row">
-          <div className="settings-row-text">
-            <div className="settings-row-label">Re-enchant all titles</div>
-            <div className="settings-row-desc">
-              Clears the D&amp;D theme cache on all devices and regenerates fresh titles
-              from the Scribe. Use when titles feel stale or devices are showing different names.
-            </div>
+        <div className="settings-row-compact">
+          <div className="settings-row-compact-left">
+            <span className="settings-label-sm">Re-enchant all titles</span>
+            <span className="settings-desc-sm">Clears theme cache and regenerates on all devices</span>
           </div>
           <button
             className="settings-retheme-btn"
             onClick={handleReTheme}
             disabled={retheming || saving}
           >
-            {retheming ? '✨ Working…' : '✨ Re-theme'}
+            {retheming ? '✨…' : '✨ Re-theme'}
           </button>
-        </label>
+        </div>
+
+        <div className="settings-section-label">Sound</div>
+
+        <div className="settings-row-compact settings-row-compact--slider">
+          <span className="settings-label-sm">🔊 SFX Volume</span>
+          <input
+            type="range"
+            min="0" max="1" step="0.05"
+            value={local.sfxVolume ?? 0.7}
+            onChange={e => update('sfxVolume', Number(e.target.value))}
+            className="settings-slider"
+            disabled={saving}
+          />
+          <span className="settings-slider-value">{sfxPct}%</span>
+        </div>
 
         <div className="modal-actions">
-          <button className="modal-btn modal-btn--cancel" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
+          <button className="modal-btn modal-btn--cancel" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="modal-btn modal-btn--create" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save'}
           </button>

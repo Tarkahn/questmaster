@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { TIER_INFO, cycleTier } from '../utils/difficulty'
+import { playDiceRoll, playDiceLand, playQuestComplete, playCoinEarn } from '../utils/audio'
 
 const REVEAL_MS = 10000
 
@@ -28,6 +29,7 @@ export default function TaskItem({ task, themedTitle, difficulty = 'normal', coi
   function handleClick() {
     if (phase !== 'idle') return
     setPhase('rolling')
+    playDiceRoll()
 
     let count = 0
     intervalRef.current = setInterval(() => {
@@ -40,6 +42,9 @@ export default function TaskItem({ task, themedTitle, difficulty = 'normal', coi
         setDisplayNum(roll)
         setEarnedXP(total)
         setPhase('done')
+        playDiceLand()
+        playQuestComplete()
+        if (coinValue > 0) setTimeout(playCoinEarn, 280)
         onComplete(task.id, total, coinValue, difficulty)
       }
     }, 55)

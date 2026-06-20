@@ -1603,35 +1603,45 @@ body {
   font-size: 15px;
 }
 
-/* --- Settings --- */
-.settings-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 0;
-  cursor: pointer;
+/* --- Settings (compact) --- */
+.settings-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin: 10px 0 4px;
 }
-.settings-row-text {
+.settings-row-compact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row-compact:last-of-type {
+  border-bottom: none;
+}
+.settings-row-compact-left {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
 }
-.settings-row-label {
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
-}
-.settings-row-desc {
-  color: var(--text-muted);
+.settings-label-sm {
   font-size: 12px;
-  line-height: 1.4;
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-desc-sm {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
 }
 .settings-toggle {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  margin-top: 2px;
+  width: 16px;
+  height: 16px;
   accent-color: var(--accent);
   cursor: pointer;
 }
@@ -1639,21 +1649,54 @@ body {
   flex-shrink: 0;
   background: rgba(124, 58, 237, 0.15);
   border: 1px solid var(--accent);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--accent-light);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 6px 12px;
+  padding: 4px 10px;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s;
 }
-.settings-retheme-btn:hover {
-  background: rgba(124, 58, 237, 0.28);
+.settings-retheme-btn:hover { background: rgba(124, 58, 237, 0.28); }
+.settings-retheme-btn:disabled { opacity: 0.5; cursor: default; }
+
+.settings-row-compact--slider {
+  gap: 8px;
 }
-.settings-retheme-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
+.settings-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.settings-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+}
+.settings-slider:disabled { opacity: 0.5; cursor: default; }
+.settings-slider-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 30px;
+  text-align: right;
 }
 
 /* ── Character Select Modal ── */

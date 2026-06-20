@@ -23,6 +23,7 @@ import CharacterSelectModal from './CharacterSelectModal'
 import CharacterView from './CharacterView'
 import Toast from './Toast'
 import { CLASSES, DEFAULT_CHARACTER, classDiceBonus, applyXpPerk, applyRangerMissionBonus } from '../utils/character'
+import { setSfxVolume, playLevelUp, playBossStrike, playBossDefeat } from '../utils/audio'
 
 export default function Dashboard({ token, onSignOut }) {
   const [tasks, setTasks] = useState([])
@@ -67,10 +68,13 @@ export default function Dashboard({ token, onSignOut }) {
 
   useEffect(() => {
     if (prevLevelRef.current !== null && level > prevLevelRef.current) {
+      playLevelUp()
       setToast(`🎉 LEVEL UP! You are now Level ${level}!`)
     }
     prevLevelRef.current = level
   }, [level])
+
+  useEffect(() => { setSfxVolume(settings.sfxVolume ?? 0.7) }, [settings.sfxVolume])
 
   // One-time theme cache sync on mount: merge Drive cache into local so both
   // devices show the same D&D themed titles. Local wins on conflicts so the
@@ -455,8 +459,10 @@ export default function Dashboard({ token, onSignOut }) {
 
     const finished = updated.find(h => h.id === habitId)
     if (finished?.status === 'defeated') {
+      playBossDefeat()
       setToast(`💀 ${finished.boss.name} DEFEATED! Habit forged!`)
     } else {
+      playBossStrike()
       setToast(`🐉 ${finished?.boss.name} struck! ${newHP} HP remaining`)
     }
   }

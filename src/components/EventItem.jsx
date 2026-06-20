@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { TIER_INFO, cycleTier } from '../utils/difficulty'
+import { playDiceRoll, playDiceLand, playMissionClaim, playCoinEarn } from '../utils/audio'
 
 const REVEAL_MS = 10000
 
@@ -43,6 +44,7 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
   function handleClaim() {
     if (phase !== 'idle') return
     setPhase('rolling')
+    playDiceRoll()
 
     let count = 0
     intervalRef.current = setInterval(() => {
@@ -55,6 +57,9 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
         setDisplayNum(roll)
         setEarnedXP(total)
         setPhase('done')
+        playDiceLand()
+        playMissionClaim()
+        if (coinValue > 0) setTimeout(playCoinEarn, 280)
         onClaim(event.id, total, coinValue)
       }
     }, 60)
