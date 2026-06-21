@@ -66,7 +66,7 @@ export default function Dashboard({ token, onSignOut }) {
   const [showSplash, setShowSplash] = useState(true)
 
   const {
-    points, coins, streak, bestStreak, lastCompletedDate, completedToday,
+    points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, completedToday,
     level, xpInto, xpNeeded, xpPct,
     claimedEvents, completeTask, uncompleteTask, earnCoins, spendCoins,
     removeCoins, claimEvent, unclaimEvent,
@@ -84,9 +84,9 @@ export default function Dashboard({ token, onSignOut }) {
   })
   const bgmRef = useRef(null)
   const prevLevelRef = useRef(null)
-  const gameStateRef = useRef({ points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history })
+  const gameStateRef = useRef({ points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history })
   useEffect(() => {
-    gameStateRef.current = { points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history }
+    gameStateRef.current = { points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history }
   })
   const handleSignOut = useCallback(onSignOut, [onSignOut])
 
@@ -453,6 +453,14 @@ export default function Dashboard({ token, onSignOut }) {
     }
   }
 
+  // Reads the coin ledger from localStorage (written synchronously by spendCoins/earnCoins)
+  // and immediately pushes it to Drive so the other device sees it on its next poll.
+  async function flushCoinsToD() {
+    const ce = Number(localStorage.getItem('qm_coins_earned') || 0)
+    const cs = Number(localStorage.getItem('qm_coins_spent')  || 0)
+    await saveGameStateToDrive(token, { ...gameStateRef.current, coinsEarned: ce, coinsSpent: cs, coins: Math.max(0, ce - cs) })
+  }
+
   async function handleBuyItem(itemId) {
     const item = ITEMS[itemId]
     if (!item || coins < item.cost) return
@@ -466,7 +474,7 @@ export default function Dashboard({ token, onSignOut }) {
     }
     spendCoins(item.cost)
     setCharacter(updated)
-    await saveCharacter(token, updated)
+    await Promise.all([saveCharacter(token, updated), flushCoinsToD()])
     setToast(`🛒 ${item.name} purchased!`)
   }
 
@@ -549,7 +557,7 @@ export default function Dashboard({ token, onSignOut }) {
 
     earnCoins(sellPrice)
     setCharacter(updated)
-    await saveCharacter(token, updated)
+    await Promise.all([saveCharacter(token, updated), flushCoinsToD()])
     setToast(`💰 Sold ${item.name} for ${sellPrice} 🪙`)
   }
 
