@@ -2275,6 +2275,21 @@ body {
   align-items: center;
   gap: 4px;
 }
+.character-stat--clickable {
+  cursor: pointer;
+  position: relative;
+}
+.character-stat--clickable:hover {
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+.character-stat-hint {
+  font-size: 10px;
+  opacity: 0.6;
+  position: absolute;
+  top: 4px;
+  right: 6px;
+}
 .character-stat-value {
   font-size: 20px;
   font-weight: 800;
@@ -2333,5 +2348,100 @@ body {
   display: flex;
   gap: 10px;
   margin-top: 4px;
+}
+
+/* Boss Journal Modal */
+.boss-journal-modal {
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  line-height: 1;
+}
+.modal-close:hover {
+  color: var(--text);
+  background: var(--bg-card2);
+}
+.boss-journal-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 24px 0;
+}
+.boss-journal-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 4px;
+}
+.boss-journal-entry {
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.boss-journal-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.boss-journal-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--gold);
+}
+.boss-journal-date {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.boss-journal-habit {
+  font-size: 13px;
+  color: var(--accent-light);
+  font-style: italic;
+}
+.boss-journal-narrative {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+  border-left: 3px solid var(--fire);
+  padding-left: 10px;
+  margin: 0;
+}
+.boss-journal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.boss-journal-strikes {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.boss-journal-reincarnate {
+  padding: 6px 14px;
+  font-size: 13px;
+  flex-shrink: 0;
 }
 }

@@ -8,7 +8,7 @@ const SLOT_LABELS = {
   accessory: '💍 Accessory',
 }
 
-export default function CharacterView({ character, level, coins, points, bossesDefeated, onChangeClass, onVisitShop }) {
+export default function CharacterView({ character, level, coins, points, bossesDefeated, onChangeClass, onVisitShop, onBossJournal }) {
   const cls = CLASSES[character?.class]
 
   return (
@@ -43,9 +43,14 @@ export default function CharacterView({ character, level, coins, points, bossesD
           <span className="character-stat-value">{coins}</span>
           <span className="character-stat-label">🪙 Coins</span>
         </div>
-        <div className="character-stat">
+        <div
+          className={`character-stat${bossesDefeated > 0 ? ' character-stat--clickable' : ''}`}
+          onClick={bossesDefeated > 0 ? onBossJournal : undefined}
+          title={bossesDefeated > 0 ? 'View Boss Journal' : undefined}
+        >
           <span className="character-stat-value">{bossesDefeated}</span>
           <span className="character-stat-label">💀 Bosses</span>
+          {bossesDefeated > 0 && <span className="character-stat-hint">📜</span>}
         </div>
       </div>
 

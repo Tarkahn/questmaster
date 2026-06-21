@@ -21,6 +21,7 @@ import SettingsModal from './SettingsModal'
 import Chronicle from './Chronicle'
 import CharacterSelectModal from './CharacterSelectModal'
 import CharacterView from './CharacterView'
+import BossJournalModal from './BossJournalModal'
 import ShopView from './ShopView'
 import SplashScreen from './SplashScreen'
 import Toast from './Toast'
@@ -49,6 +50,7 @@ export default function Dashboard({ token, onSignOut }) {
   })
   const [character, setCharacter] = useState(DEFAULT_CHARACTER)
   const [showCharacterSelect, setShowCharacterSelect] = useState(false)
+  const [showBossJournal, setShowBossJournal] = useState(false)
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
   const [showSettings, setShowSettings] = useState(false)
@@ -720,6 +722,22 @@ export default function Dashboard({ token, onSignOut }) {
     setToast(`↺ ${habit?.boss?.name || 'Boss'} restarted — back to day one!`)
   }
 
+  function handleReincarnate(defeatedHabit) {
+    const newHabit = createHabitObj({
+      title: defeatedHabit.title,
+      themedTitle: defeatedHabit.themedTitle,
+      bossName: defeatedHabit.boss.name,
+      bossDescription: defeatedHabit.boss.description,
+    })
+    const updated = [...habits, newHabit]
+    setHabits(updated)
+    saveHabits(updated)
+    saveToDrive(token, updated)
+    setShowBossJournal(false)
+    setView('bosses')
+    setToast(`🐉 ${newHabit.boss.name} has returned for a rematch!`)
+  }
+
   function handleResetAllBossStats() {
     const updated = resetAllBossStats(habits)
     setHabits(updated)
@@ -806,6 +824,13 @@ export default function Dashboard({ token, onSignOut }) {
           onClose={() => setShowCharacterSelect(false)}
         />
       )}
+      {showBossJournal && (
+        <BossJournalModal
+          defeatedHabits={defeatedHabits}
+          onReincarnate={handleReincarnate}
+          onClose={() => setShowBossJournal(false)}
+        />
+      )}
 
       <header className="header">
         <div className="header-top">
@@ -887,6 +912,7 @@ export default function Dashboard({ token, onSignOut }) {
             bossesDefeated={defeatedHabits.length}
             onChangeClass={() => setShowCharacterSelect(true)}
             onVisitShop={() => setView('shop')}
+            onBossJournal={() => setShowBossJournal(true)}
           />
         )}
 
