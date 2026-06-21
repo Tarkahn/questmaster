@@ -21,6 +21,7 @@ import SettingsModal from './SettingsModal'
 import Chronicle from './Chronicle'
 import CharacterSelectModal from './CharacterSelectModal'
 import CharacterView from './CharacterView'
+import SplashScreen from './SplashScreen'
 import Toast from './Toast'
 import { CLASSES, DEFAULT_CHARACTER, classDiceBonus, applyXpPerk, applyRangerMissionBonus } from '../utils/character'
 import { setSfxVolume, playLevelUp, playBossStrike, playBossDefeat } from '../utils/audio'
@@ -54,6 +55,7 @@ export default function Dashboard({ token, onSignOut }) {
   const [suggestedDifficulties, setSuggestedDifficulties] = useState({})
   const [syncStatus, setSyncStatus] = useState('checking') // checking | ok | scope | network
   const [view, setView] = useState('quests') // quests | chronicle | character
+  const [showSplash, setShowSplash] = useState(true)
 
   const {
     points, coins, streak, bestStreak, lastCompletedDate, completedToday,
@@ -79,23 +81,25 @@ export default function Dashboard({ token, onSignOut }) {
 
   useEffect(() => { setSfxVolume(settings.sfxVolume ?? 0.7) }, [settings.sfxVolume])
 
-  // Start BGM on first user interaction (browsers block autoplay before that)
+  // Start BGM immediately. iOS allows muted autoplay — start muted then unmute.
+  // If even that is blocked, fall back to first interaction.
   useEffect(() => {
     const audio = bgmRef.current
     if (!audio) return
     audio.volume = settings.musicVolume ?? 0.3
-
-    const tryPlay = () => audio.play().catch(() => {})
-    // Attempt immediate autoplay; if blocked, start on first tap/click
-    audio.play().catch(() => {
-      const onInteraction = () => {
-        tryPlay()
-        document.removeEventListener('click', onInteraction)
-        document.removeEventListener('touchstart', onInteraction)
-      }
-      document.addEventListener('click', onInteraction)
-      document.addEventListener('touchstart', onInteraction)
-    })
+    audio.muted = true
+    audio.play()
+      .then(() => { audio.muted = false })
+      .catch(() => {
+        audio.muted = false
+        const onInteraction = () => {
+          audio.play().catch(() => {})
+          document.removeEventListener('click', onInteraction)
+          document.removeEventListener('touchstart', onInteraction)
+        }
+        document.addEventListener('click', onInteraction)
+        document.addEventListener('touchstart', onInteraction)
+      })
   }, [])
 
   // Keep music volume in sync with settings without restarting the track
@@ -556,6 +560,7 @@ export default function Dashboard({ token, onSignOut }) {
   return (
     <div className="dashboard">
       <audio ref={bgmRef} src={BGM_SRC} loop preload="auto" style={{ display: 'none' }} />
+      {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
       {showCreateHabit && (
         <CreateHabitModal

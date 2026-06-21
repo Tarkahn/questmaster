@@ -33,6 +33,59 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── Splash Screen ── */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 40%, #1e1040 0%, #0f0f1a 65%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  opacity: 1;
+  transition: opacity 0.55s ease;
+}
+
+.splash--fade {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.splash-emblem {
+  font-size: 72px;
+  animation: splashPulse 1.8s ease-in-out infinite;
+  filter: drop-shadow(0 0 24px rgba(124, 58, 237, 0.7));
+}
+
+.splash-title {
+  font-size: 38px;
+  font-weight: 900;
+  color: var(--gold);
+  letter-spacing: 3px;
+  text-shadow: 0 0 30px rgba(245, 158, 11, 0.5);
+}
+
+.splash-tagline {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-style: italic;
+  letter-spacing: 0.5px;
+}
+
+@keyframes splashPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); filter: drop-shadow(0 0 32px rgba(124, 58, 237, 0.9)); }
+}
+
 /* ── Toast ── */
 
 .toast {
