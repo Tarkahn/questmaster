@@ -2445,24 +2445,22 @@ body {
   flex-shrink: 0;
 }
 
-/* Recurring Quests section */
-.recurring-section {
-  margin-top: 10px;
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-}
-.recurring-section-header {
+/* Recurring Quests section — reuses .completed-section/.completed-row */
+.recurring-section-header--btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  margin-bottom: 6px;
 }
-.recurring-section-label {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+.recurring-chevron {
+  font-size: 9px;
   color: var(--text-muted);
+  margin-left: auto;
 }
 .recurring-toggle-row {
   display: flex;

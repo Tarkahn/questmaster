@@ -53,6 +53,7 @@ export default function Dashboard({ token, onSignOut }) {
   const [showCharacterSelect, setShowCharacterSelect] = useState(false)
   const [showBossJournal, setShowBossJournal] = useState(false)
   const [recurring, setRecurring] = useState(() => loadRecurring())
+  const [showRecurringList, setShowRecurringList] = useState(false)
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
   const [showSettings, setShowSettings] = useState(false)
@@ -297,6 +298,7 @@ export default function Dashboard({ token, onSignOut }) {
       setLoading(false)
 
       const includeNotes = settings.sendNotesToLlm
+      const currentRecurringDefs = loadRecurring()
       const allItems = [
         ...t.map(task => ({
           id: task.id,
@@ -308,6 +310,7 @@ export default function Dashboard({ token, onSignOut }) {
           title: event.summary || '',
           notes: includeNotes ? event.description : undefined,
         })),
+        ...currentRecurringDefs.map(def => ({ id: def.id, title: def.title })),
       ].filter(item => item.title)
 
       if (allItems.length > 0) {
@@ -1033,15 +1036,24 @@ export default function Dashboard({ token, onSignOut }) {
               )}
 
               {recurring.length > 0 && (
-                <div className="recurring-section">
-                  <div className="recurring-section-header">
-                    <span className="recurring-section-label">🔄 Recurring</span>
-                  </div>
-                  {recurring.map(def => (
-                    <div key={def.id} className={`recurring-row${!def.active ? ' recurring-row--paused' : ''}`}>
-                      <span className="recurring-row-icon">{def.active ? '🔄' : '⏸'}</span>
+                <div className="completed-section">
+                  <button
+                    className="completed-section-header recurring-section-header--btn"
+                    onClick={() => setShowRecurringList(v => !v)}
+                  >
+                    <span className="completed-section-label" style={{ color: 'var(--accent-light)' }}>🔄 Recurring</span>
+                    <span className="completed-section-count" style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--accent-light)' }}>{recurring.length}</span>
+                    <span className="recurring-chevron">{showRecurringList ? '▲' : '▼'}</span>
+                  </button>
+                  {showRecurringList && recurring.map(def => (
+                    <div key={def.id} className={`completed-row${!def.active ? ' recurring-row--paused' : ''}`}>
+                      <span className="completed-row-check" style={{ color: def.active ? 'var(--accent-light)' : 'var(--text-muted)' }}>
+                        {def.active ? '🔄' : '⏸'}
+                      </span>
                       <div className="recurring-row-body">
-                        <span className="recurring-row-title">{def.title}</span>
+                        <span className="completed-row-name" style={{ textDecoration: 'none', color: def.active ? 'var(--text)' : 'var(--text-muted)' }}>
+                          {themedTitles[def.id] || def.title}
+                        </span>
                         <span className="recurring-row-schedule">{scheduleLabel(def.days)}</span>
                       </div>
                       <div className="recurring-row-actions">
@@ -1053,7 +1065,7 @@ export default function Dashboard({ token, onSignOut }) {
                         <button
                           className="recurring-action-btn recurring-action-btn--delete"
                           onClick={() => handleDeleteRecurring(def.id)}
-                          title="Delete recurring quest"
+                          title="Delete"
                         >✕</button>
                       </div>
                     </div>
