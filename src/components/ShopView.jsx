@@ -45,13 +45,15 @@ export default function ShopView({ character, coins, onBuy, onEquip, onUse, onSe
 
   const allInCategory = Object.values(ITEMS).filter(i => i.category === activeCategory)
 
-  const visibleItems = allInCategory.filter(item => {
-    const owned  = character.ownedItems?.includes(item.id)
-    const hasAny = owned || (character.consumables?.[item.id] || 0) > 0
-    if (hasAny) return true          // always show owned (so player can sell)
-    if (showAll) return true
-    return isItemForClass(item, character.class)
-  })
+  const visibleItems = allInCategory
+    .filter(item => {
+      const owned  = character.ownedItems?.includes(item.id)
+      const hasAny = owned || (character.consumables?.[item.id] || 0) > 0
+      if (hasAny) return true          // always show owned (so player can sell)
+      if (showAll) return true
+      return isItemForClass(item, character.class)
+    })
+    .sort((a, b) => a.cost - b.cost)
 
   return (
     <div className="shop-view">
