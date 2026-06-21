@@ -770,7 +770,6 @@ export default function Dashboard({ token, onSignOut }) {
     setRecurring(updated)
     saveRecurring(updated)
     saveRecurringToDrive(token, updated)
-    setShowCreateRecurring(false)
     setToast(`🔄 "${title}" will repeat ${scheduleLabel(days)}`)
   }
 
