@@ -14,6 +14,8 @@ const THEME_CACHE_FILE_NAME = 'questmaster-themes.json'
 const THEME_CACHE_FILE_ID_KEY = 'qm_drive_themes_id'
 const CHARACTER_FILE_NAME = 'questmaster-character.json'
 const CHARACTER_FILE_ID_KEY = 'qm_drive_character_id'
+const RECURRING_FILE_NAME = 'questmaster-recurring.json'
+const RECURRING_FILE_ID_KEY = 'qm_drive_recurring_id'
 
 function auth(token) {
   return { Authorization: `Bearer ${token}` }
@@ -649,6 +651,76 @@ export async function saveCharacter(token, character) {
         body: multipart,
       })
       if (res.ok) { const data = await res.json(); if (data.id) localStorage.setItem(CHARACTER_FILE_ID_KEY, data.id) }
+    }
+  } catch {}
+}
+
+async function findRecurringFileId(token) {
+  const params = new URLSearchParams({
+    spaces: 'appDataFolder',
+    q: `name='${RECURRING_FILE_NAME}'`,
+    fields: 'files(id)',
+    orderBy: 'createdTime',
+  })
+  const res = await fetch(`${DRIVE}/files?${params}`, { headers: auth(token) })
+  if (!res.ok) throw Object.assign(new Error(`Drive list failed: ${res.status}`), { status: res.status })
+  const data = await res.json()
+  return data.files?.[0]?.id || null
+}
+
+async function getRecurringFileId(token) {
+  const id = await findRecurringFileId(token)
+  if (id) localStorage.setItem(RECURRING_FILE_ID_KEY, id)
+  else localStorage.removeItem(RECURRING_FILE_ID_KEY)
+  return id
+}
+
+export async function loadRecurringFromDrive(token) {
+  try {
+    const fileId = await getRecurringFileId(token)
+    if (!fileId) return { defs: null, error: null }
+    const res = await fetch(`${DRIVE}/files/${fileId}?alt=media`, { headers: auth(token) })
+    if (res.status === 404) {
+      localStorage.removeItem(RECURRING_FILE_ID_KEY)
+      return { defs: null, error: null }
+    }
+    if (!res.ok) throw Object.assign(new Error(`Drive read failed: ${res.status}`), { status: res.status })
+    const defs = await res.json()
+    return { defs: Array.isArray(defs) ? defs : null, error: null }
+  } catch (e) {
+    const status = e.status
+    if (status === 401 || status === 403) return { defs: null, error: 'scope' }
+    return { defs: null, error: 'network' }
+  }
+}
+
+export async function saveRecurringToDrive(token, defs) {
+  try {
+    const body = JSON.stringify(defs)
+    let fileId = await getRecurringFileId(token)
+    if (fileId) {
+      const res = await fetch(`${UPLOAD}/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { ...auth(token), 'Content-Type': 'application/json' },
+        body,
+      })
+      if (res.status === 404) {
+        localStorage.removeItem(RECURRING_FILE_ID_KEY)
+        return saveRecurringToDrive(token, defs)
+      }
+    } else {
+      const boundary = 'qm_boundary_008'
+      const metadata = JSON.stringify({ name: RECURRING_FILE_NAME, parents: ['appDataFolder'] })
+      const multipart = [
+        `--${boundary}`, 'Content-Type: application/json; charset=UTF-8', '', metadata,
+        `--${boundary}`, 'Content-Type: application/json', '', body, `--${boundary}--`,
+      ].join('\r\n')
+      const res = await fetch(`${UPLOAD}/files?uploadType=multipart`, {
+        method: 'POST',
+        headers: { ...auth(token), 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body: multipart,
+      })
+      if (res.ok) { const data = await res.json(); if (data.id) localStorage.setItem(RECURRING_FILE_ID_KEY, data.id) }
     }
   } catch {}
 }

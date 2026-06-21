@@ -2444,4 +2444,159 @@ body {
   font-size: 13px;
   flex-shrink: 0;
 }
+
+/* Recurring Quests section */
+.recurring-section {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.recurring-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.recurring-section-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+}
+.recurring-add-btn {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+.recurring-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}
+.recurring-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 6px;
+}
+.recurring-row--paused {
+  opacity: 0.55;
+}
+.recurring-row-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.recurring-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.recurring-row-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recurring-row-schedule {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.recurring-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.recurring-action-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.recurring-action-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.recurring-action-btn--delete:hover {
+  color: var(--fire);
+  border-color: var(--fire);
+}
+
+/* Create Recurring Quest Modal */
+.recurring-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.recurring-preset-btn {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-card2);
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.recurring-preset-btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.recurring-days {
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.recurring-day-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-card2);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.recurring-day-btn--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.recurring-day-warn {
+  font-size: 12px;
+  color: var(--fire);
+  margin: 0 0 8px;
+}
 }

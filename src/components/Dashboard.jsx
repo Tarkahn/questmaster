@@ -4,7 +4,8 @@ import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
-import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, saveCharacter } from '../utils/driveSync'
+import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, saveCharacter, loadRecurringFromDrive, saveRecurringToDrive } from '../utils/driveSync'
+import { loadRecurring, saveRecurring, createRecurringDef, getDueToday, markMaterialized, scheduleLabel } from '../utils/recurring'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
 import { useGameState, computeGameStateMerge } from '../hooks/useGameState'
@@ -22,6 +23,7 @@ import Chronicle from './Chronicle'
 import CharacterSelectModal from './CharacterSelectModal'
 import CharacterView from './CharacterView'
 import BossJournalModal from './BossJournalModal'
+import CreateRecurringQuestModal from './CreateRecurringQuestModal'
 import ShopView from './ShopView'
 import SplashScreen from './SplashScreen'
 import Toast from './Toast'
@@ -51,6 +53,8 @@ export default function Dashboard({ token, onSignOut }) {
   const [character, setCharacter] = useState(DEFAULT_CHARACTER)
   const [showCharacterSelect, setShowCharacterSelect] = useState(false)
   const [showBossJournal, setShowBossJournal] = useState(false)
+  const [showCreateRecurring, setShowCreateRecurring] = useState(false)
+  const [recurring, setRecurring] = useState(() => loadRecurring())
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
   const [showSettings, setShowSettings] = useState(false)
@@ -255,6 +259,25 @@ export default function Dashboard({ token, onSignOut }) {
 
   const loadTasksAndEvents = useCallback(async () => {
     try {
+      // Materialize recurring quests that are due today before fetching tasks
+      // so they appear in the list without needing a second load.
+      const currentRecurring = loadRecurring()
+      const due = getDueToday(currentRecurring)
+      if (due.length > 0) {
+        let updated = currentRecurring
+        for (const def of due) {
+          try {
+            await createTask(token, { title: def.title, notes: def.notes || undefined })
+            updated = markMaterialized(updated, def.id)
+          } catch { /* don't block if one fails */ }
+        }
+        if (updated !== currentRecurring) {
+          saveRecurring(updated)
+          setRecurring(updated)
+          saveRecurringToDrive(token, updated)
+        }
+      }
+
       const [t, e] = await Promise.all([
         fetchTodaysTasks(token),
         fetchTodaysEvents(token),
@@ -738,6 +761,30 @@ export default function Dashboard({ token, onSignOut }) {
     setToast(`🐉 ${newHabit.boss.name} has returned for a rematch!`)
   }
 
+  function handleCreateRecurring({ title, notes, days }) {
+    const def = createRecurringDef({ title, notes, days })
+    const updated = [...recurring, def]
+    setRecurring(updated)
+    saveRecurring(updated)
+    saveRecurringToDrive(token, updated)
+    setShowCreateRecurring(false)
+    setToast(`🔄 "${title}" will repeat ${scheduleLabel(days)}`)
+  }
+
+  function handleDeleteRecurring(id) {
+    const updated = recurring.filter(d => d.id !== id)
+    setRecurring(updated)
+    saveRecurring(updated)
+    saveRecurringToDrive(token, updated)
+  }
+
+  function handleToggleRecurring(id) {
+    const updated = recurring.map(d => d.id === id ? { ...d, active: !d.active } : d)
+    setRecurring(updated)
+    saveRecurring(updated)
+    saveRecurringToDrive(token, updated)
+  }
+
   function handleResetAllBossStats() {
     const updated = resetAllBossStats(habits)
     setHabits(updated)
@@ -829,6 +876,12 @@ export default function Dashboard({ token, onSignOut }) {
           defeatedHabits={defeatedHabits}
           onReincarnate={handleReincarnate}
           onClose={() => setShowBossJournal(false)}
+        />
+      )}
+      {showCreateRecurring && (
+        <CreateRecurringQuestModal
+          onCreate={handleCreateRecurring}
+          onClose={() => setShowCreateRecurring(false)}
         />
       )}
 
@@ -981,6 +1034,44 @@ export default function Dashboard({ token, onSignOut }) {
                   ))}
                 </div>
               )}
+
+              <div className="recurring-section">
+                <div className="recurring-section-header">
+                  <span className="recurring-section-label">🔄 Recurring Quests</span>
+                  <button
+                    className="recurring-add-btn"
+                    onClick={() => setShowCreateRecurring(true)}
+                    aria-label="Add recurring quest"
+                  >+</button>
+                </div>
+                {recurring.length === 0 ? (
+                  <p className="recurring-empty">
+                    No recurring quests — tap <strong>+</strong> to set one up.
+                  </p>
+                ) : (
+                  recurring.map(def => (
+                    <div key={def.id} className={`recurring-row${!def.active ? ' recurring-row--paused' : ''}`}>
+                      <span className="recurring-row-icon">{def.active ? '🔄' : '⏸'}</span>
+                      <div className="recurring-row-body">
+                        <span className="recurring-row-title">{def.title}</span>
+                        <span className="recurring-row-schedule">{scheduleLabel(def.days)}</span>
+                      </div>
+                      <div className="recurring-row-actions">
+                        <button
+                          className="recurring-action-btn"
+                          onClick={() => handleToggleRecurring(def.id)}
+                          title={def.active ? 'Pause' : 'Resume'}
+                        >{def.active ? '⏸' : '▶'}</button>
+                        <button
+                          className="recurring-action-btn recurring-action-btn--delete"
+                          onClick={() => handleDeleteRecurring(def.id)}
+                          title="Delete recurring quest"
+                        >✕</button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </section>
 
             <section className="section">
