@@ -25,7 +25,7 @@ import ShopView from './ShopView'
 import SplashScreen from './SplashScreen'
 import Toast from './Toast'
 import { CLASSES, DEFAULT_CHARACTER, classDiceBonus, applyXpPerk, applyRangerMissionBonus } from '../utils/character'
-import { ITEMS, getItemDiceBonus, getPhilosopherBonus } from '../utils/items'
+import { ITEMS, getItemDiceBonus, getPhilosopherBonus, getTomeBonus, getItemMissionBonus, isItemForClass } from '../utils/items'
 import { setSfxVolume, playLevelUp, playBossStrike, playBossDefeat } from '../utils/audio'
 
 const BGM_SRC = '/audio/Medieval%20Vol.%202%206.mp3'
@@ -301,25 +301,43 @@ export default function Dashboard({ token, onSignOut }) {
       await markTaskComplete(token, taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
 
-      // XP: scroll double → class perk
+      // XP: scroll double → class perk → tome bonus → arcane pendant flat bonus
       const scrolled = xpDoubleActive
       if (scrolled) setXpDoubleActive(false)
-      const finalXP = applyXpPerk(scrolled ? xp * 2 : xp, character.class, difficulty)
+      const baseXP = applyXpPerk(scrolled ? xp * 2 : xp, character.class, difficulty)
+      const tomeBonus = getTomeBonus(character, baseXP)
+      const accessory = character.equippedItems?.accessory
+      const pendantBonus = accessory === 'arcane-pendant' ? (ITEMS['arcane-pendant'].xpFlatBonus || 0) : 0
+      const finalXP = baseXP + tomeBonus + pendantBonus
 
       // Coins: accessory perks → philosopher's stone passive
       let finalCoins = coinValue
-      const accessory = character.equippedItems?.accessory
-      if (accessory === 'ring-of-focus' && difficulty === 'legendary') finalCoins += 2
+      if (accessory === 'ring-of-focus' && difficulty === 'legendary') finalCoins += ITEMS['ring-of-focus'].legendaryCoinsBonus
+      if (accessory === 'rogues-signet' && difficulty === 'normal') finalCoins += ITEMS['rogues-signet'].normalCoinsBonus
       const fortuned = accessory === 'fortune-amulet' && Math.random() < 0.1
       if (fortuned) finalCoins *= 2
       finalCoins += getPhilosopherBonus(character, finalXP)
+
+      // Cleric's Amulet: passive heal 1 HP to first active boss on any quest
+      if (accessory === 'clerics-amulet') {
+        const target = habits.find(h => h.status === 'active')
+        if (target && target.boss.currentHP < target.boss.maxHP) {
+          const updatedHabits = habits.map(h =>
+            h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: Math.min(h.boss.maxHP, h.boss.currentHP + 1) } } : h
+          )
+          setHabits(updatedHabits)
+          saveHabits(updatedHabits)
+          saveToDrive(token, updatedHabits)
+        }
+      }
 
       completeTask(finalXP)
       earnCoins(finalCoins)
 
       const notes = []
       if (scrolled) notes.push('×2 scroll')
-      if (finalXP !== (scrolled ? xp * 2 : xp)) notes.push(`${CLASSES[character.class]?.name} perk`)
+      if (baseXP !== (scrolled ? xp * 2 : xp)) notes.push(`${CLASSES[character.class]?.name} perk`)
+      if (tomeBonus) notes.push('📚 tome')
       if (fortuned) notes.push('🍀 fortune!')
       const note = notes.length ? ` (${notes.join(', ')})` : ''
       setToast(`⚔️ Quest Complete! +${finalXP} XP${note}  +${finalCoins} 🪙`)
@@ -359,21 +377,26 @@ export default function Dashboard({ token, onSignOut }) {
     const count = (character.consumables || {})[itemId] || 0
     if (!item?.consumable || count <= 0) return
 
-    if (itemId === 'health-potion') {
+    if (item.bossHeal) {
       const target = habits.find(h => h.status === 'active')
       if (!target) { setToast('No active bosses to heal!'); return }
       const healedHP = Math.min(target.boss.maxHP, target.boss.currentHP + item.bossHeal)
       const gained = healedHP - target.boss.currentHP
       const updatedHabits = habits.map(h => h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: healedHP } } : h)
-      setHabits(updatedHabits)
-      saveHabits(updatedHabits)
-      saveToDrive(token, updatedHabits)
-      setToast(`🧪 ${target.boss.name} restored +${gained} HP!`)
-    } else if (itemId === 'xp-scroll') {
+      setHabits(updatedHabits); saveHabits(updatedHabits); saveToDrive(token, updatedHabits)
+      setToast(`${item.emoji} ${target.boss.name} restored +${gained} HP!`)
+    } else if (item.bossDamage) {
+      const target = habits.find(h => h.status === 'active')
+      if (!target) { setToast('No active bosses to target!'); return }
+      const newHP = Math.max(1, target.boss.currentHP - item.bossDamage) // can't land killing blow
+      const updatedHabits = habits.map(h => h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: newHP } } : h)
+      setHabits(updatedHabits); saveHabits(updatedHabits); saveToDrive(token, updatedHabits)
+      setToast(`${item.emoji} ${target.boss.name} weakened to ${newHP} HP! Finish it off.`)
+    } else if (item.xpDouble) {
       setXpDoubleActive(true)
-      setToast('📜 XP Scroll active — next Quest earns double XP!')
-    } else if (itemId === 'ration') {
-      setToast('🍖 You eat the ration. Hearty sustenance for the road ahead!')
+      setToast(`${item.emoji} Active — next Quest earns double XP!`)
+    } else if (item.flavorOnly) {
+      setToast(item.flavorText || `${item.emoji} ${item.name} used.`)
     }
 
     const consumables = { ...(character.consumables || {}), [itemId]: count - 1 }
@@ -381,6 +404,33 @@ export default function Dashboard({ token, onSignOut }) {
     const updated = { ...character, consumables }
     setCharacter(updated)
     await saveCharacter(token, updated)
+  }
+
+  async function handleSellItem(itemId) {
+    const item = ITEMS[itemId]
+    if (!item) return
+    const sellPrice = Math.floor(item.cost / 2)
+    let updated = { ...character }
+
+    if (item.consumable) {
+      const count = (character.consumables || {})[itemId] || 0
+      if (count <= 0) return
+      const consumables = { ...(character.consumables || {}), [itemId]: count - 1 }
+      if (consumables[itemId] <= 0) delete consumables[itemId]
+      updated = { ...updated, consumables }
+    } else {
+      if (!character.ownedItems.includes(itemId)) return
+      updated = { ...updated, ownedItems: character.ownedItems.filter(id => id !== itemId) }
+      // Unequip if this item was in a slot
+      if (item.slot && character.equippedItems?.[item.slot] === itemId) {
+        updated = { ...updated, equippedItems: { ...updated.equippedItems, [item.slot]: null } }
+      }
+    }
+
+    earnCoins(sellPrice)
+    setCharacter(updated)
+    await saveCharacter(token, updated)
+    setToast(`💰 Sold ${item.name} for ${sellPrice} 🪙`)
   }
 
   async function handleCreateQuest(data) {
@@ -398,11 +448,24 @@ export default function Dashboard({ token, onSignOut }) {
   }
 
   async function handleSelectClass(classId) {
-    const updated = { ...character, class: classId }
+    // Auto-unequip any items incompatible with the new class
+    const equippedItems = { ...character.equippedItems }
+    let unequipped = []
+    Object.entries(equippedItems).forEach(([slot, itemId]) => {
+      if (!itemId) return
+      if (!isItemForClass(ITEMS[itemId], classId)) {
+        unequipped.push(ITEMS[itemId]?.name || itemId)
+        equippedItems[slot] = null
+      }
+    })
+    const updated = { ...character, class: classId, equippedItems }
     setCharacter(updated)
     setShowCharacterSelect(false)
     const cls = CLASSES[classId]
     setToast(`${cls.emoji} You are now a ${cls.name}!`)
+    if (unequipped.length) {
+      setTimeout(() => setToast(`⚠️ Unequipped: ${unequipped.join(', ')} (incompatible with ${cls.name})`), 2200)
+    }
     await saveCharacter(token, updated)
   }
 
@@ -516,6 +579,7 @@ export default function Dashboard({ token, onSignOut }) {
   function handleClaim(eventId, xp, coinValue) {
     claimEvent(eventId, xp)
     const finalCoins = applyRangerMissionBonus(coinValue, character.class)
+                     + getItemMissionBonus(character)
     earnCoins(finalCoins)
     setToast(`🔮 Mission Claimed! +${xp} XP  +${finalCoins} 🪙`)
   }
@@ -786,6 +850,7 @@ export default function Dashboard({ token, onSignOut }) {
             onBuy={handleBuyItem}
             onEquip={handleEquipItem}
             onUse={handleUseConsumable}
+            onSell={handleSellItem}
             onBack={() => setView('character')}
           />
         )}

@@ -1812,6 +1812,13 @@ body {
 .item-btn--buy   { background: var(--accent); color: #fff; }
 .item-btn--equip { background: var(--green);  color: #fff; }
 .item-btn--use   { background: var(--fire);   color: #fff; }
+.item-btn--sell  {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 3px 8px;
+}
 
 .item-badge {
   font-size: 10px;
@@ -1823,6 +1830,46 @@ body {
 .item-badge--equipped { background: rgba(245,158,11,0.15); color: var(--gold); }
 .item-badge--owned    { background: rgba(16,185,129,0.12); color: var(--green); }
 .item-badge--locked   { background: var(--bg-card); color: var(--text-muted); }
+
+.item-row--cross-class { opacity: 0.7; }
+.item-row--cross-class .item-row-icon { border-color: rgba(255,255,255,0.08); }
+.item-row-cross-note {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  font-style: italic;
+}
+
+.shop-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.shop-filter-btn {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-card2);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.shop-filter-btn--active {
+  border-color: var(--accent);
+  color: var(--accent-light);
+  background: rgba(124,58,237,0.12);
+}
+
+.shop-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px 0;
+}
 
 /* --- Settings (compact) --- */
 .settings-section-label {
