@@ -350,6 +350,18 @@ export default function Dashboard({ token, onSignOut }) {
 
   useEffect(() => { loadTasksAndEvents() }, [loadTasksAndEvents])
 
+  // When recurring defs arrive from Drive (after syncFromDrive finishes),
+  // loadTasksAndEvents may have already built its allItems list without them.
+  // This effect catches any defs that still lack a themed title and themes them.
+  useEffect(() => {
+    if (!recurring.length) return
+    const unthemed = recurring.filter(d => !themedTitles[d.id])
+    if (!unthemed.length) return
+    themeItems(unthemed.map(d => ({ id: d.id, title: d.title })), glossary)
+      .then(({ themes }) => setThemedTitles(prev => ({ ...prev, ...themes })))
+      .catch(() => {})
+  }, [recurring]) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleComplete(taskId, xp, coinValue, difficulty) {
     try {
       const taskObj = tasks.find(t => t.id === taskId)
