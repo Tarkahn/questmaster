@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, createTask, createEvent, deleteTask, updateTask, deleteEvent, updateEvent } from '../utils/api'
+import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, markTaskIncomplete, createTask, createEvent, deleteTask, updateTask, deleteEvent, updateEvent } from '../utils/api'
 import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
@@ -67,9 +67,16 @@ export default function Dashboard({ token, onSignOut }) {
     history, resetStats, applyGameState,
   } = useGameState()
   const [xpDoubleActive, setXpDoubleActive] = useState(false)
+  const [completedTasks, setCompletedTasks] = useState(() => {
+    try {
+      const raw = localStorage.getItem('qm_completed_today')
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      const today = new Date().toISOString().slice(0, 10)
+      return parsed.date === today ? (parsed.entries || []) : []
+    } catch { return [] }
+  })
   const bgmRef = useRef(null)
-  const undoRef = useRef(null)       // current undo callback (null = no undo available)
-  const pendingApiRef = useRef(null) // { taskId, timer } deferred markTaskComplete
   const prevLevelRef = useRef(null)
   const gameStateRef = useRef({ points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history })
   useEffect(() => {
@@ -301,13 +308,6 @@ export default function Dashboard({ token, onSignOut }) {
 
   async function handleComplete(taskId, xp, coinValue, difficulty) {
     try {
-      // If a previous completion is still pending (undo window open), finalize it now
-      if (pendingApiRef.current) {
-        clearTimeout(pendingApiRef.current.timer)
-        await markTaskComplete(token, pendingApiRef.current.taskId)
-        pendingApiRef.current = null
-      }
-
       const taskObj = tasks.find(t => t.id === taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
 
@@ -343,6 +343,22 @@ export default function Dashboard({ token, onSignOut }) {
 
       completeTask(finalXP)
       earnCoins(finalCoins)
+      await markTaskComplete(token, taskId)
+
+      // Move task to "Completed Today" section
+      const entry = {
+        task: taskObj,
+        themedTitle: themedTitles[taskId] || null,
+        xp: finalXP,
+        coins: finalCoins,
+        difficulty,
+      }
+      setCompletedTasks(prev => {
+        const next = [entry, ...prev]
+        const today = new Date().toISOString().slice(0, 10)
+        localStorage.setItem('qm_completed_today', JSON.stringify({ date: today, entries: next }))
+        return next
+      })
 
       const notes = []
       if (scrolled) notes.push('×2 scroll')
@@ -350,26 +366,27 @@ export default function Dashboard({ token, onSignOut }) {
       if (tomeBonus) notes.push('📚 tome')
       if (fortuned) notes.push('🍀 fortune!')
       const note = notes.length ? ` (${notes.join(', ')})` : ''
-
-      // Defer the actual Google Tasks API call — gives undo window
-      const timer = setTimeout(async () => {
-        try { await markTaskComplete(token, taskId) } catch {}
-        pendingApiRef.current = null
-        undoRef.current = null
-      }, 5500)
-      pendingApiRef.current = { taskId, timer }
-
-      undoRef.current = () => {
-        clearTimeout(pendingApiRef.current?.timer)
-        pendingApiRef.current = null
-        uncompleteTask(finalXP)
-        removeCoins(finalCoins)
-        if (taskObj) setTasks(prev => [taskObj, ...prev])
-      }
-
       setToast(`⚔️ Quest Complete! +${finalXP} XP${note}  +${finalCoins} 🪙`)
     } catch (err) {
       console.error('Failed to complete task:', err)
+    }
+  }
+
+  async function handleRestoreTask(entry) {
+    try {
+      await markTaskIncomplete(token, entry.task.id)
+      uncompleteTask(entry.xp)
+      removeCoins(entry.coins)
+      setTasks(prev => [entry.task, ...prev])
+      setCompletedTasks(prev => {
+        const next = prev.filter(e => e.task.id !== entry.task.id)
+        const today = new Date().toISOString().slice(0, 10)
+        localStorage.setItem('qm_completed_today', JSON.stringify({ date: today, entries: next }))
+        return next
+      })
+      setToast(`↩ "${entry.themedTitle || entry.task.title}" restored`)
+    } catch (err) {
+      console.error('Failed to restore task:', err)
     }
   }
 
@@ -604,17 +621,16 @@ export default function Dashboard({ token, onSignOut }) {
   }
 
   function handleClaim(eventId, xp, coinValue) {
+    // coinValue is already fully adjusted (ranger + item bonuses applied in render)
     claimEvent(eventId, xp)
-    const finalCoins = applyRangerMissionBonus(coinValue, character.class)
-                     + getItemMissionBonus(character)
-    earnCoins(finalCoins)
+    earnCoins(coinValue)
+    setToast(`🔮 Mission Claimed! +${xp} XP  +${coinValue} 🪙`)
+  }
 
-    undoRef.current = () => {
-      unclaimEvent(eventId, xp)
-      removeCoins(finalCoins)
-    }
-
-    setToast(`🔮 Mission Claimed! +${xp} XP  +${finalCoins} 🪙`)
+  function handleUnclaimEvent(eventId, xp, coins) {
+    unclaimEvent(eventId, xp)
+    removeCoins(coins)
+    setToast('↩ Mission unclaimed')
   }
 
   function isEventClaimed(eventId) {
@@ -734,13 +750,7 @@ export default function Dashboard({ token, onSignOut }) {
     <div className="dashboard">
       <audio ref={bgmRef} src={BGM_SRC} loop preload="auto" style={{ display: 'none' }} />
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
-      {toast && (
-        <Toast
-          message={toast}
-          onUndo={undoRef.current ? () => { undoRef.current?.(); undoRef.current = null } : null}
-          onDone={() => { setToast(null); undoRef.current = null }}
-        />
-      )}
+      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
       {showCreateHabit && (
         <CreateHabitModal
           onClose={() => setShowCreateHabit(false)}
@@ -906,7 +916,7 @@ export default function Dashboard({ token, onSignOut }) {
                   + New Quest
                 </button>
               </div>
-              {tasks.length === 0
+              {tasks.length === 0 && completedTasks.length === 0
                 ? <p className="empty">All quests complete — you're a legend! 🎉</p>
                 : tasks.map(task => (
                     <TaskItem
@@ -922,6 +932,30 @@ export default function Dashboard({ token, onSignOut }) {
                     />
                   ))
               }
+
+              {completedTasks.length > 0 && (
+                <div className="completed-section">
+                  <div className="completed-section-header">
+                    <span className="completed-section-label">✓ Completed Today</span>
+                    <span className="completed-section-count">{completedTasks.length}</span>
+                  </div>
+                  {completedTasks.map(entry => (
+                    <div key={entry.task.id} className="completed-row">
+                      <span className="completed-row-check">✓</span>
+                      <span className="completed-row-name">
+                        {entry.themedTitle || entry.task.title || '(Quest)'}
+                      </span>
+                      <span className="completed-row-xp">+{entry.xp} XP</span>
+                      <button
+                        className="completed-row-restore"
+                        onClick={() => handleRestoreTask(entry)}
+                      >
+                        ↩ Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className="section">
@@ -940,8 +974,9 @@ export default function Dashboard({ token, onSignOut }) {
                       themedTitle={themedTitles[event.id]}
                       claimed={isEventClaimed(event.id)}
                       difficulty={getEffectiveDifficulty(event.id)}
-                      coinValue={applyRangerMissionBonus(BASE_COIN_VALUE[getEffectiveDifficulty(event.id)] || BASE_COIN_VALUE.normal, character.class)}
+                      coinValue={applyRangerMissionBonus(BASE_COIN_VALUE[getEffectiveDifficulty(event.id)] || BASE_COIN_VALUE.normal, character.class) + getItemMissionBonus(character)}
                       onClaim={handleClaim}
+                      onUnclaim={handleUnclaimEvent}
                       onDifficultyChange={handleDifficultyChange}
                       onEdit={() => setEditingEvent(event)}
                     />

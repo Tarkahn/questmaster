@@ -1883,6 +1883,108 @@ body {
   background: rgba(124,58,237,0.12);
 }
 
+/* ── Completed Today section ── */
+
+.completed-section {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.completed-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.completed-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--green);
+}
+
+.completed-section-count {
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(16,185,129,0.15);
+  color: var(--green);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+.completed-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.completed-row:last-child { border-bottom: none; }
+
+.completed-row-check {
+  font-size: 13px;
+  color: var(--green);
+  flex-shrink: 0;
+}
+
+.completed-row-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255,255,255,0.2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.completed-row-xp {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.completed-row-restore {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.completed-row-restore:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.3);
+}
+
+/* ── Mission unclaim button ── */
+
+.event-unclaim-btn {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text-muted);
+  font-size: 14px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.event-unclaim-btn:hover { background: rgba(255,255,255,0.15); color: var(--text); }
+
 .shop-empty {
   font-size: 13px;
   color: var(--text-muted);

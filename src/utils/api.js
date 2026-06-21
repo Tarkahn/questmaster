@@ -27,6 +27,19 @@ export async function markTaskComplete(token, taskId) {
   return res.json()
 }
 
+export async function markTaskIncomplete(token, taskId) {
+  const res = await fetch(
+    `${BASE}/tasks/v1/lists/@default/tasks/${taskId}`,
+    {
+      method: 'PATCH',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'needsAction', completed: null }),
+    }
+  )
+  if (!res.ok) throw new Error('Failed to reopen task')
+  return res.json()
+}
+
 // title: string, due?: 'YYYY-MM-DD', notes?: string
 export async function createTask(token, { title, due, notes }) {
   const body = { title }

@@ -4,7 +4,7 @@ import { playDiceRoll, playDiceLand, playMissionClaim, playCoinEarn } from '../u
 
 const REVEAL_MS = 10000
 
-export default function EventItem({ event, themedTitle, claimed, difficulty = 'normal', coinValue = 0, onClaim, onDifficultyChange, onEdit }) {
+export default function EventItem({ event, themedTitle, claimed, difficulty = 'normal', coinValue = 0, onClaim, onUnclaim, onDifficultyChange, onEdit }) {
   const [phase, setPhase] = useState(claimed ? 'done' : 'idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
   const [earnedXP, setEarnedXP] = useState(null)
@@ -116,6 +116,18 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
           )}
         </div>
       </div>
+          {phase === 'done' && onUnclaim && earnedXP !== null && (
+        <button
+          className="event-unclaim-btn"
+          onClick={e => {
+            e.stopPropagation()
+            onUnclaim(event.id, earnedXP, coinValue)
+            setPhase('idle')
+            setEarnedXP(null)
+          }}
+          aria-label="Unclaim mission"
+        >↩</button>
+      )}
       {phase === 'done' && <span className="points-pop points-pop--rune">+{earnedXP} XP</span>}
       {phase === 'done' && coinValue > 0 && <span className="coins-pop coins-pop--rune">+{coinValue} 🪙</span>}
     </div>
