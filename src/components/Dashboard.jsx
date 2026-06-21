@@ -23,7 +23,6 @@ import Chronicle from './Chronicle'
 import CharacterSelectModal from './CharacterSelectModal'
 import CharacterView from './CharacterView'
 import BossJournalModal from './BossJournalModal'
-import CreateRecurringQuestModal from './CreateRecurringQuestModal'
 import ShopView from './ShopView'
 import SplashScreen from './SplashScreen'
 import Toast from './Toast'
@@ -53,7 +52,6 @@ export default function Dashboard({ token, onSignOut }) {
   const [character, setCharacter] = useState(DEFAULT_CHARACTER)
   const [showCharacterSelect, setShowCharacterSelect] = useState(false)
   const [showBossJournal, setShowBossJournal] = useState(false)
-  const [showCreateRecurring, setShowCreateRecurring] = useState(false)
   const [recurring, setRecurring] = useState(() => loadRecurring())
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
@@ -509,6 +507,11 @@ export default function Dashboard({ token, onSignOut }) {
     loadTasksAndEvents()
   }
 
+  function handleCreateRecurringFromModal({ title, notes, days }) {
+    handleCreateRecurring({ title, notes, days })
+    setShowCreateQuest(false)
+  }
+
   async function handleCreateMission(data) {
     await createEvent(token, data)
     setShowCreateMission(false)
@@ -825,6 +828,7 @@ export default function Dashboard({ token, onSignOut }) {
         <CreateQuestModal
           onClose={() => setShowCreateQuest(false)}
           onCreate={handleCreateQuest}
+          onCreateRecurring={handleCreateRecurringFromModal}
         />
       )}
       {showCreateMission && (
@@ -876,12 +880,6 @@ export default function Dashboard({ token, onSignOut }) {
           defeatedHabits={defeatedHabits}
           onReincarnate={handleReincarnate}
           onClose={() => setShowBossJournal(false)}
-        />
-      )}
-      {showCreateRecurring && (
-        <CreateRecurringQuestModal
-          onCreate={handleCreateRecurring}
-          onClose={() => setShowCreateRecurring(false)}
         />
       )}
 
@@ -1035,21 +1033,12 @@ export default function Dashboard({ token, onSignOut }) {
                 </div>
               )}
 
-              <div className="recurring-section">
-                <div className="recurring-section-header">
-                  <span className="recurring-section-label">🔄 Recurring Quests</span>
-                  <button
-                    className="recurring-add-btn"
-                    onClick={() => setShowCreateRecurring(true)}
-                    aria-label="Add recurring quest"
-                  >+</button>
-                </div>
-                {recurring.length === 0 ? (
-                  <p className="recurring-empty">
-                    No recurring quests — tap <strong>+</strong> to set one up.
-                  </p>
-                ) : (
-                  recurring.map(def => (
+              {recurring.length > 0 && (
+                <div className="recurring-section">
+                  <div className="recurring-section-header">
+                    <span className="recurring-section-label">🔄 Recurring</span>
+                  </div>
+                  {recurring.map(def => (
                     <div key={def.id} className={`recurring-row${!def.active ? ' recurring-row--paused' : ''}`}>
                       <span className="recurring-row-icon">{def.active ? '🔄' : '⏸'}</span>
                       <div className="recurring-row-body">
@@ -1069,9 +1058,9 @@ export default function Dashboard({ token, onSignOut }) {
                         >✕</button>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className="section">

@@ -2464,26 +2464,27 @@ body {
   letter-spacing: 0.6px;
   color: var(--text-muted);
 }
-.recurring-add-btn {
-  background: var(--accent);
-  border: none;
-  color: #fff;
-  font-size: 18px;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
+.recurring-toggle-row {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
   cursor: pointer;
-  line-height: 1;
-  padding: 0;
+  padding: 6px 0;
 }
-.recurring-empty {
-  font-size: 13px;
-  color: var(--text-muted);
-  font-style: italic;
-  margin: 0;
+.recurring-toggle-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.recurring-toggle-label {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+}
+.recurring-picker {
+  padding: 10px 0 4px;
 }
 .recurring-row {
   display: flex;
