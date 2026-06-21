@@ -194,6 +194,15 @@ export function useGameState() {
     })
   }
 
+  function spendCoins(n) {
+    setState(prev => {
+      if (prev.coins < n) return prev
+      const coins = prev.coins - n
+      localStorage.setItem(KEYS.coins, String(coins))
+      return { ...prev, coins }
+    })
+  }
+
   function claimEvent(eventId, xp) {
     setState(prev => {
       const points = prev.points + xp
@@ -274,6 +283,7 @@ export function useGameState() {
     xpPct: pct,
     completeTask,
     earnCoins,
+    spendCoins,
     claimEvent,
     resetStats,
     applyGameState,

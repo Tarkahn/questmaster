@@ -1656,6 +1656,173 @@ body {
   font-size: 15px;
 }
 
+/* ── Shop ── */
+
+.shop-view {
+  padding: 4px 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shop-back-btn {
+  background: none;
+  border: none;
+  color: var(--accent-light);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.shop-back-btn:hover { color: var(--text); }
+
+.shop-coin-display {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+.shop-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0.5px;
+  margin: -6px 0 -4px;
+}
+
+.shop-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.shop-tabs::-webkit-scrollbar { display: none; }
+
+.shop-tab {
+  flex-shrink: 0;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.shop-tab--active {
+  background: rgba(124, 58, 237, 0.2);
+  border-color: var(--accent);
+  color: var(--accent-light);
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+/* ── Item Cards ── */
+
+.item-card {
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s;
+}
+.item-card--equipped {
+  border-color: var(--gold);
+  background: rgba(245, 158, 11, 0.06);
+}
+.item-card--locked {
+  opacity: 0.55;
+}
+
+.item-card-icon {
+  width: 52px;
+  height: 52px;
+  background: rgba(124, 58, 237, 0.1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+.item-emoji {
+  font-size: 28px;
+  line-height: 1;
+}
+.item-card--equipped .item-card-icon {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: var(--gold);
+}
+
+.item-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.item-card-effect {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  flex: 1;
+}
+
+.item-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  gap: 4px;
+}
+
+.item-card-cost {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.item-btn {
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.item-btn:hover { opacity: 0.85; }
+.item-btn--buy   { background: var(--accent); color: #fff; }
+.item-btn--equip { background: var(--green);  color: #fff; }
+.item-btn--use   { background: var(--fire);   color: #fff; }
+
+.item-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.item-badge--equipped { background: rgba(245,158,11,0.15); color: var(--gold); }
+.item-badge--locked   { background: var(--bg-card); color: var(--text-muted); }
+
 /* --- Settings (compact) --- */
 .settings-section-label {
   font-size: 10px;

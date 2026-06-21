@@ -1,4 +1,5 @@
 import { CLASSES } from '../utils/character'
+import { ITEMS } from '../utils/items'
 
 const SLOT_LABELS = {
   weapon: '⚔️ Weapon',
@@ -7,7 +8,7 @@ const SLOT_LABELS = {
   accessory: '💍 Accessory',
 }
 
-export default function CharacterView({ character, level, coins, points, bossesDefeated, onChangeClass }) {
+export default function CharacterView({ character, level, coins, points, bossesDefeated, onChangeClass, onVisitShop }) {
   const cls = CLASSES[character?.class]
 
   return (
@@ -55,7 +56,9 @@ export default function CharacterView({ character, level, coins, points, bossesD
           return (
             <div key={slot} className={`equipment-slot${equipped ? ' equipment-slot--filled' : ''}`}>
               <span className="equipment-slot-label">{label}</span>
-              <span className="equipment-slot-item">{equipped || 'Empty'}</span>
+              <span className="equipment-slot-item">
+                {equipped ? `${ITEMS[equipped]?.emoji || ''} ${ITEMS[equipped]?.name || equipped}` : 'Empty'}
+              </span>
             </div>
           )
         })}
@@ -65,8 +68,8 @@ export default function CharacterView({ character, level, coins, points, bossesD
         <button className="modal-btn modal-btn--cancel" onClick={onChangeClass}>
           Change Class
         </button>
-        <button className="modal-btn modal-btn--create" disabled style={{ opacity: 0.4 }}>
-          🛒 Shop — Coming Soon
+        <button className="modal-btn modal-btn--create" onClick={onVisitShop}>
+          🛒 Visit Shop
         </button>
       </div>
     </div>

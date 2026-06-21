@@ -21,9 +21,11 @@ import SettingsModal from './SettingsModal'
 import Chronicle from './Chronicle'
 import CharacterSelectModal from './CharacterSelectModal'
 import CharacterView from './CharacterView'
+import ShopView from './ShopView'
 import SplashScreen from './SplashScreen'
 import Toast from './Toast'
 import { CLASSES, DEFAULT_CHARACTER, classDiceBonus, applyXpPerk, applyRangerMissionBonus } from '../utils/character'
+import { ITEMS, getItemDiceBonus, getPhilosopherBonus } from '../utils/items'
 import { setSfxVolume, playLevelUp, playBossStrike, playBossDefeat } from '../utils/audio'
 
 const BGM_SRC = '/audio/Medieval%20Vol.%202%206.mp3'
@@ -60,9 +62,10 @@ export default function Dashboard({ token, onSignOut }) {
   const {
     points, coins, streak, bestStreak, lastCompletedDate, completedToday,
     level, xpInto, xpNeeded, xpPct,
-    claimedEvents, completeTask, earnCoins, claimEvent,
+    claimedEvents, completeTask, earnCoins, spendCoins, claimEvent,
     history, resetStats, applyGameState,
   } = useGameState()
+  const [xpDoubleActive, setXpDoubleActive] = useState(false)
   const bgmRef = useRef(null)
   const prevLevelRef = useRef(null)
   const gameStateRef = useRef({ points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history })
@@ -297,14 +300,87 @@ export default function Dashboard({ token, onSignOut }) {
     try {
       await markTaskComplete(token, taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
-      const finalXP = applyXpPerk(xp, character.class, difficulty)
+
+      // XP: scroll double → class perk
+      const scrolled = xpDoubleActive
+      if (scrolled) setXpDoubleActive(false)
+      const finalXP = applyXpPerk(scrolled ? xp * 2 : xp, character.class, difficulty)
+
+      // Coins: accessory perks → philosopher's stone passive
+      let finalCoins = coinValue
+      const accessory = character.equippedItems?.accessory
+      if (accessory === 'ring-of-focus' && difficulty === 'legendary') finalCoins += 2
+      const fortuned = accessory === 'fortune-amulet' && Math.random() < 0.1
+      if (fortuned) finalCoins *= 2
+      finalCoins += getPhilosopherBonus(character, finalXP)
+
       completeTask(finalXP)
-      earnCoins(coinValue)
-      const xpNote = finalXP !== xp ? ` (${CLASSES[character.class]?.name} bonus!)` : ''
-      setToast(`⚔️ Quest Complete! +${finalXP} XP${xpNote}  +${coinValue} 🪙`)
+      earnCoins(finalCoins)
+
+      const notes = []
+      if (scrolled) notes.push('×2 scroll')
+      if (finalXP !== (scrolled ? xp * 2 : xp)) notes.push(`${CLASSES[character.class]?.name} perk`)
+      if (fortuned) notes.push('🍀 fortune!')
+      const note = notes.length ? ` (${notes.join(', ')})` : ''
+      setToast(`⚔️ Quest Complete! +${finalXP} XP${note}  +${finalCoins} 🪙`)
     } catch (err) {
       console.error('Failed to complete task:', err)
     }
+  }
+
+  async function handleBuyItem(itemId) {
+    const item = ITEMS[itemId]
+    if (!item || coins < item.cost) return
+    let updated
+    if (item.consumable) {
+      const consumables = { ...(character.consumables || {}), [itemId]: ((character.consumables || {})[itemId] || 0) + 1 }
+      updated = { ...character, consumables }
+    } else {
+      if (character.ownedItems.includes(itemId)) return
+      updated = { ...character, ownedItems: [...character.ownedItems, itemId] }
+    }
+    spendCoins(item.cost)
+    setCharacter(updated)
+    await saveCharacter(token, updated)
+    setToast(`🛒 ${item.name} purchased!`)
+  }
+
+  async function handleEquipItem(itemId) {
+    const item = ITEMS[itemId]
+    if (!item?.slot || !character.ownedItems.includes(itemId)) return
+    const updated = { ...character, equippedItems: { ...character.equippedItems, [item.slot]: itemId } }
+    setCharacter(updated)
+    await saveCharacter(token, updated)
+    setToast(`${item.emoji} ${item.name} equipped!`)
+  }
+
+  async function handleUseConsumable(itemId) {
+    const item = ITEMS[itemId]
+    const count = (character.consumables || {})[itemId] || 0
+    if (!item?.consumable || count <= 0) return
+
+    if (itemId === 'health-potion') {
+      const target = habits.find(h => h.status === 'active')
+      if (!target) { setToast('No active bosses to heal!'); return }
+      const healedHP = Math.min(target.boss.maxHP, target.boss.currentHP + item.bossHeal)
+      const gained = healedHP - target.boss.currentHP
+      const updatedHabits = habits.map(h => h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: healedHP } } : h)
+      setHabits(updatedHabits)
+      saveHabits(updatedHabits)
+      saveToDrive(token, updatedHabits)
+      setToast(`🧪 ${target.boss.name} restored +${gained} HP!`)
+    } else if (itemId === 'xp-scroll') {
+      setXpDoubleActive(true)
+      setToast('📜 XP Scroll active — next Quest earns double XP!')
+    } else if (itemId === 'ration') {
+      setToast('🍖 You eat the ration. Hearty sustenance for the road ahead!')
+    }
+
+    const consumables = { ...(character.consumables || {}), [itemId]: count - 1 }
+    if (consumables[itemId] <= 0) delete consumables[itemId]
+    const updated = { ...character, consumables }
+    setCharacter(updated)
+    await saveCharacter(token, updated)
   }
 
   async function handleCreateQuest(data) {
@@ -635,8 +711,8 @@ export default function Dashboard({ token, onSignOut }) {
             </button>
             <button
               className="glossary-btn"
-              onClick={() => setView(v => v === 'character' ? 'quests' : 'character')}
-              title={view === 'character' ? 'Back to today\'s quests' : 'View character'}
+              onClick={() => setView(v => (v === 'character' || v === 'shop') ? 'quests' : 'character')}
+              title={(view === 'character' || view === 'shop') ? 'Back to today\'s quests' : 'View character'}
             >
               👤
             </button>
@@ -698,6 +774,19 @@ export default function Dashboard({ token, onSignOut }) {
             points={points}
             bossesDefeated={defeatedHabits.length}
             onChangeClass={() => setShowCharacterSelect(true)}
+            onVisitShop={() => setView('shop')}
+          />
+        )}
+
+        {!loading && !error && view === 'shop' && (
+          <ShopView
+            character={character}
+            coins={coins}
+            habits={habits}
+            onBuy={handleBuyItem}
+            onEquip={handleEquipItem}
+            onUse={handleUseConsumable}
+            onBack={() => setView('character')}
           />
         )}
 
@@ -722,7 +811,7 @@ export default function Dashboard({ token, onSignOut }) {
                       themedTitle={themedTitles[task.id]}
                       difficulty={getEffectiveDifficulty(task.id)}
                       coinValue={computeCoins(task.id, getEffectiveDifficulty(task.id), taskSeenMap, character.class)}
-                      diceBonus={classDiceBonus(character.class)}
+                      diceBonus={classDiceBonus(character.class) + getItemDiceBonus(character)}
                       onComplete={handleComplete}
                       onDifficultyChange={handleDifficultyChange}
                       onEdit={() => setEditingTask(task)}

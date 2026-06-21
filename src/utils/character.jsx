@@ -42,6 +42,7 @@ export const DEFAULT_CHARACTER = {
   class: null,
   ownedItems: [],
   equippedItems: { weapon: null, head: null, body: null, accessory: null },
+  consumables: {},
   unlockedMilestones: [],
 }
 
