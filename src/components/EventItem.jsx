@@ -116,14 +116,15 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
           )}
         </div>
       </div>
-          {phase === 'done' && onUnclaim && earnedXP !== null && (
+          {phase === 'done' && onUnclaim && (
         <button
           className="event-unclaim-btn"
           onClick={e => {
             e.stopPropagation()
-            onUnclaim(event.id, earnedXP, coinValue)
+            onUnclaim(event.id)
             setPhase('idle')
             setEarnedXP(null)
+            setDisplayNum(null)
           }}
           aria-label="Unclaim mission"
         >↩</button>

@@ -30,13 +30,17 @@ export function computeGameStateMerge(local, drive) {
 
   // Union today's claimed event IDs from both devices so a claim on one
   // device immediately prevents a double-claim on the other.
-  const localClaimed = local.claimedEvents || { date: today, ids: [] }
-  const driveClaimed = drive.claimedEvents || { date: today, ids: [] }
+  const localClaimed = local.claimedEvents || { date: today, ids: [], claims: {} }
+  const driveClaimed = drive.claimedEvents || { date: today, ids: [], claims: {} }
   const mergedIds = [
     ...(localClaimed.date === today ? localClaimed.ids : []),
     ...(driveClaimed.date === today ? driveClaimed.ids : []),
   ]
-  const claimedEvents = { date: today, ids: [...new Set(mergedIds)] }
+  const mergedClaims = {
+    ...(driveClaimed.date === today ? (driveClaimed.claims || {}) : {}),
+    ...(localClaimed.date === today ? (localClaimed.claims || {}) : {}),
+  }
+  const claimedEvents = { date: today, ids: [...new Set(mergedIds)], claims: mergedClaims }
 
   const historyMap = {}
   for (const row of [...(local.history || []), ...(drive.history || [])]) {
@@ -203,12 +207,14 @@ export function useGameState() {
     })
   }
 
-  function claimEvent(eventId, xp) {
+  function claimEvent(eventId, xp, coins = 0) {
     setState(prev => {
       const points = prev.points + xp
+      const prevClaims = prev.claimedEvents?.claims || {}
       const claimedEvents = {
         date: todayStr(),
-        ids: [...prev.claimedEvents.ids, eventId],
+        ids: [...(prev.claimedEvents?.ids || []), eventId],
+        claims: { ...prevClaims, [eventId]: { xp, coins } },
       }
       const history = updateTodaySnapshot(prev.history, s => ({
         ...s,
@@ -274,11 +280,15 @@ export function useGameState() {
     })
   }
 
-  function unclaimEvent(eventId, xp) {
+  function unclaimEvent(eventId) {
     setState(prev => {
+      const { xp = 0, coins = 0 } = prev.claimedEvents?.claims?.[eventId] || {}
       const points = Math.max(0, prev.points - xp)
+      const coinsNext = Math.max(0, prev.coins - coins)
       const ids = (prev.claimedEvents?.ids || []).filter(id => id !== eventId)
-      const claimedEvents = { ...prev.claimedEvents, ids }
+      const claims = { ...(prev.claimedEvents?.claims || {}) }
+      delete claims[eventId]
+      const claimedEvents = { ...prev.claimedEvents, ids, claims }
       const history = updateTodaySnapshot(prev.history, s => ({
         ...s,
         xpEarned: Math.max(0, s.xpEarned - xp),
@@ -287,9 +297,10 @@ export function useGameState() {
         level: getLevel(points),
       }))
       localStorage.setItem(KEYS.points, String(points))
+      localStorage.setItem(KEYS.coins, String(coinsNext))
       localStorage.setItem(KEYS.claimedEvents, JSON.stringify(claimedEvents))
       localStorage.setItem(KEYS.history, JSON.stringify(history))
-      return { ...prev, points, claimedEvents, history }
+      return { ...prev, points, coins: coinsNext, claimedEvents, history }
     })
   }
 

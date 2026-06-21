@@ -622,14 +622,13 @@ export default function Dashboard({ token, onSignOut }) {
 
   function handleClaim(eventId, xp, coinValue) {
     // coinValue is already fully adjusted (ranger + item bonuses applied in render)
-    claimEvent(eventId, xp)
+    claimEvent(eventId, xp, coinValue)
     earnCoins(coinValue)
     setToast(`🔮 Mission Claimed! +${xp} XP  +${coinValue} 🪙`)
   }
 
-  function handleUnclaimEvent(eventId, xp, coins) {
-    unclaimEvent(eventId, xp)
-    removeCoins(coins)
+  function handleUnclaimEvent(eventId) {
+    unclaimEvent(eventId) // reads stored xp+coins from claimedEvents.claims, reverses both
     setToast('↩ Mission unclaimed')
   }
 
