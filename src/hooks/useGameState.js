@@ -2,7 +2,9 @@ import { useState } from 'react'
 
 const KEYS = {
   points: 'qm_points',
-  coins: 'qm_coins',
+  coins: 'qm_coins',           // legacy balance key — kept for migration reads only
+  coinsEarned: 'qm_coins_earned',
+  coinsSpent:  'qm_coins_spent',
   streak: 'qm_streak',
   bestStreak: 'qm_best_streak',
   lastCompletedDate: 'qm_last_completed',
@@ -12,14 +14,48 @@ const KEYS = {
 
 const HISTORY_LIMIT = 400 // ~13 months of daily snapshots
 
-// Pure merge: takes two game state objects, returns the merged result.
+// ── Coin helpers ────────────────────────────────────────────────────────────
+// Coins use a double-ledger so Math.max merge works for both earning AND spending.
+// coinsEarned and coinsSpent are monotonically increasing; coins = earned - spent.
+
+function readCoinLedger() {
+  const earned = Number(localStorage.getItem(KEYS.coinsEarned) || 0)
+  const spent  = Number(localStorage.getItem(KEYS.coinsSpent)  || 0)
+  if (earned === 0 && spent === 0) {
+    // Backward-compat: migrate from old single-balance key
+    const legacy = Number(localStorage.getItem(KEYS.coins) || 0)
+    if (legacy > 0) {
+      localStorage.setItem(KEYS.coinsEarned, String(legacy))
+      return { coinsEarned: legacy, coinsSpent: 0, coins: legacy }
+    }
+  }
+  return { coinsEarned: earned, coinsSpent: spent, coins: Math.max(0, earned - spent) }
+}
+
+function mergeCoinLedger(local, drive) {
+  // Backward-compat: old Drive files only have `coins`, no coinsEarned/coinsSpent
+  const driveHasLedger = drive.coinsEarned != null || drive.coinsSpent != null
+  const driveEarned = driveHasLedger
+    ? (drive.coinsEarned || 0)
+    : (drive.coins || 0)
+  const driveSpent = drive.coinsSpent || 0
+
+  const coinsEarned = Math.max(local.coinsEarned || 0, driveEarned)
+  const coinsSpent  = Math.max(local.coinsSpent  || 0, driveSpent)
+  const coins       = Math.max(0, coinsEarned - coinsSpent)
+  return { coinsEarned, coinsSpent, coins }
+}
+
+// ── Pure merge ───────────────────────────────────────────────────────────────
+// Takes two game state objects, returns the merged result.
 // Exported so Dashboard can compute the merge before touching Drive or React state.
 export function computeGameStateMerge(local, drive) {
   const today = new Date().toISOString().slice(0, 10)
 
-  const points = Math.max(local.points || 0, drive.points || 0)
-  const coins = Math.max(local.coins || 0, drive.coins || 0)
+  const points     = Math.max(local.points || 0, drive.points || 0)
   const bestStreak = Math.max(local.bestStreak || 0, drive.bestStreak || 0)
+
+  const { coinsEarned, coinsSpent, coins } = mergeCoinLedger(local, drive)
 
   const localDate = local.lastCompletedDate || ''
   const driveDate = drive.lastCompletedDate || ''
@@ -59,7 +95,7 @@ export function computeGameStateMerge(local, drive) {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-HISTORY_LIMIT)
 
-  return { points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history }
+  return { points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history }
 }
 
 function todayStr() {
@@ -77,7 +113,6 @@ function loadClaimedEvents() {
     const raw = localStorage.getItem(KEYS.claimedEvents)
     if (!raw) return { date: todayStr(), ids: [] }
     const parsed = JSON.parse(raw)
-    // Reset daily — event claims don't carry over to the next day
     return parsed.date === todayStr() ? parsed : { date: todayStr(), ids: [] }
   } catch {
     return { date: todayStr(), ids: [] }
@@ -94,9 +129,12 @@ function loadHistory() {
 }
 
 function load() {
+  const { coinsEarned, coinsSpent, coins } = readCoinLedger()
   return {
     points: Number(localStorage.getItem(KEYS.points) || 0),
-    coins: Number(localStorage.getItem(KEYS.coins) || 0),
+    coins,
+    coinsEarned,
+    coinsSpent,
     streak: Number(localStorage.getItem(KEYS.streak) || 0),
     bestStreak: Number(localStorage.getItem(KEYS.bestStreak) || 0),
     lastCompletedDate: localStorage.getItem(KEYS.lastCompletedDate) || null,
@@ -105,8 +143,12 @@ function load() {
   }
 }
 
+function saveCoinLedger(coinsEarned, coinsSpent) {
+  localStorage.setItem(KEYS.coinsEarned, String(coinsEarned))
+  localStorage.setItem(KEYS.coinsSpent,  String(coinsSpent))
+}
+
 // Returns a new history array with today's snapshot updated via `updater`.
-// Creates a fresh row if today has no entry yet. Trimmed to HISTORY_LIMIT.
 function updateTodaySnapshot(history, updater) {
   const today = todayStr()
   const idx = history.findIndex(h => h.date === today)
@@ -127,24 +169,21 @@ function updateTodaySnapshot(history, updater) {
 }
 
 // XP to reach level N: 100 × (N-1)²
-// Level 1: 0 XP, Level 2: 100, Level 3: 400, Level 4: 900, Level 5: 1600
 function xpForLevel(n) {
   return 100 * (n - 1) * (n - 1)
 }
 
 export function getLevel(points) {
   let level = 1
-  while (points >= xpForLevel(level + 1)) {
-    level++
-  }
+  while (points >= xpForLevel(level + 1)) level++
   return level
 }
 
 export function getLevelProgress(points) {
   const level = getLevel(points)
   const xpStart = xpForLevel(level)
-  const xpEnd = xpForLevel(level + 1)
-  const xpInto = points - xpStart
+  const xpEnd   = xpForLevel(level + 1)
+  const xpInto  = points - xpStart
   const xpNeeded = xpEnd - xpStart
   return { level, xpInto, xpNeeded, pct: xpInto / xpNeeded }
 }
@@ -154,14 +193,14 @@ export function useGameState() {
 
   function completeTask(xp = 10) {
     setState(prev => {
-      const today = todayStr()
+      const today     = todayStr()
       const yesterday = yesterdayStr()
       let { points, streak, bestStreak, lastCompletedDate } = prev
 
       points += xp
 
       if (lastCompletedDate === today) {
-        // Already completed a task today — streak unchanged
+        // streak unchanged
       } else if (lastCompletedDate === yesterday) {
         streak += 1
       } else {
@@ -192,18 +231,29 @@ export function useGameState() {
 
   function earnCoins(n) {
     setState(prev => {
-      const coins = prev.coins + n
-      localStorage.setItem(KEYS.coins, String(coins))
-      return { ...prev, coins }
+      const coinsEarned = (prev.coinsEarned || 0) + n
+      const coins = Math.max(0, coinsEarned - (prev.coinsSpent || 0))
+      saveCoinLedger(coinsEarned, prev.coinsSpent || 0)
+      return { ...prev, coinsEarned, coins }
     })
   }
 
   function spendCoins(n) {
     setState(prev => {
-      if (prev.coins < n) return prev
-      const coins = prev.coins - n
-      localStorage.setItem(KEYS.coins, String(coins))
-      return { ...prev, coins }
+      if ((prev.coins || 0) < n) return prev
+      const coinsSpent = (prev.coinsSpent || 0) + n
+      const coins = Math.max(0, (prev.coinsEarned || 0) - coinsSpent)
+      saveCoinLedger(prev.coinsEarned || 0, coinsSpent)
+      return { ...prev, coinsSpent, coins }
+    })
+  }
+
+  function removeCoins(n) {
+    setState(prev => {
+      const coinsSpent = (prev.coinsSpent || 0) + n
+      const coins = Math.max(0, (prev.coinsEarned || 0) - coinsSpent)
+      saveCoinLedger(prev.coinsEarned || 0, coinsSpent)
+      return { ...prev, coinsSpent, coins }
     })
   }
 
@@ -232,28 +282,28 @@ export function useGameState() {
   }
 
   // Applies a pre-computed merged game state to React state and localStorage.
-  // Call computeGameStateMerge first, then pass the result here.
-  // Uses setState(prev=>) so it always compares against live React state,
-  // preventing a stale gameStateRef from letting Drive overwrite a completion
-  // that happened between the last ref update and the sync running.
   function applyGameState(merged) {
     setState(prev => {
-      const localDate = prev.lastCompletedDate || ''
+      const localDate  = prev.lastCompletedDate || ''
       const mergedDate = merged.lastCompletedDate || ''
-      const useLocal = localDate > mergedDate
+      const useLocal   = localDate > mergedDate
+
+      const { coinsEarned, coinsSpent, coins } = mergeCoinLedger(prev, merged)
 
       const next = {
         ...prev,
         ...merged,
-        points: Math.max(prev.points, merged.points),
-        coins: Math.max(prev.coins ?? 0, merged.coins ?? 0),
-        bestStreak: Math.max(prev.bestStreak, merged.bestStreak),
-        lastCompletedDate: useLocal ? prev.lastCompletedDate : merged.lastCompletedDate,
-        streak: useLocal ? prev.streak : merged.streak,
+        points:             Math.max(prev.points, merged.points),
+        coins,
+        coinsEarned,
+        coinsSpent,
+        bestStreak:         Math.max(prev.bestStreak, merged.bestStreak),
+        lastCompletedDate:  useLocal ? prev.lastCompletedDate : merged.lastCompletedDate,
+        streak:             useLocal ? prev.streak : merged.streak,
       }
 
       localStorage.setItem(KEYS.points, String(next.points))
-      localStorage.setItem(KEYS.coins, String(next.coins))
+      saveCoinLedger(next.coinsEarned, next.coinsSpent)
       localStorage.setItem(KEYS.streak, String(next.streak))
       localStorage.setItem(KEYS.bestStreak, String(next.bestStreak))
       if (next.lastCompletedDate) localStorage.setItem(KEYS.lastCompletedDate, next.lastCompletedDate)
@@ -282,9 +332,11 @@ export function useGameState() {
 
   function unclaimEvent(eventId) {
     setState(prev => {
-      const { xp = 0, coins = 0 } = prev.claimedEvents?.claims?.[eventId] || {}
+      const { xp = 0, coins: claimedCoins = 0 } = prev.claimedEvents?.claims?.[eventId] || {}
       const points = Math.max(0, prev.points - xp)
-      const coinsNext = Math.max(0, prev.coins - coins)
+      // Model the reversal as spending so coinsSpent stays monotonically increasing
+      const coinsSpent  = (prev.coinsSpent || 0) + claimedCoins
+      const coins       = Math.max(0, (prev.coinsEarned || 0) - coinsSpent)
       const ids = (prev.claimedEvents?.ids || []).filter(id => id !== eventId)
       const claims = { ...(prev.claimedEvents?.claims || {}) }
       delete claims[eventId]
@@ -297,18 +349,10 @@ export function useGameState() {
         level: getLevel(points),
       }))
       localStorage.setItem(KEYS.points, String(points))
-      localStorage.setItem(KEYS.coins, String(coinsNext))
+      saveCoinLedger(prev.coinsEarned || 0, coinsSpent)
       localStorage.setItem(KEYS.claimedEvents, JSON.stringify(claimedEvents))
       localStorage.setItem(KEYS.history, JSON.stringify(history))
-      return { ...prev, points, coins: coinsNext, claimedEvents, history }
-    })
-  }
-
-  function removeCoins(n) {
-    setState(prev => {
-      const coins = Math.max(0, prev.coins - n)
-      localStorage.setItem(KEYS.coins, String(coins))
-      return { ...prev, coins }
+      return { ...prev, points, coins, coinsSpent, claimedEvents, history }
     })
   }
 
@@ -317,6 +361,8 @@ export function useGameState() {
     setState({
       points: 0,
       coins: 0,
+      coinsEarned: 0,
+      coinsSpent: 0,
       streak: 0,
       bestStreak: 0,
       lastCompletedDate: null,
