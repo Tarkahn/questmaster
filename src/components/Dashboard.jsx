@@ -27,7 +27,7 @@ import ShopView from './ShopView'
 import SplashScreen from './SplashScreen'
 import Toast from './Toast'
 import { CLASSES, DEFAULT_CHARACTER, classDiceBonus, applyXpPerk, applyRangerMissionBonus } from '../utils/character'
-import { ITEMS, getItemDiceBonus, getPhilosopherBonus, getTomeBonus, getItemMissionBonus, isItemForClass } from '../utils/items'
+import { ITEMS, getItemDiceBonus, getPhilosopherBonus, getTomeBonus, getItemMissionBonus, isItemForClass, migrateEquippedItems } from '../utils/items'
 import { setSfxVolume, playLevelUp, playBossStrike, playBossDefeat } from '../utils/audio'
 
 const BGM_SRC = '/audio/Medieval%20Vol.%202%206.mp3'
@@ -61,7 +61,8 @@ export default function Dashboard({ token, onSignOut }) {
   const [difficultyMemory, setDifficultyMemory] = useState(() => loadDifficultyMemory())
   const [suggestedDifficulties, setSuggestedDifficulties] = useState({})
   const [syncStatus, setSyncStatus] = useState('checking') // checking | ok | scope | network
-  const [view, setView] = useState('quests') // quests | chronicle | character
+  const [view, setView] = useState('quests') // quests | chronicle | character | shop
+  const [shopStartCategory, setShopStartCategory] = useState('weapon')
   const [showSplash, setShowSplash] = useState(true)
 
   const {
@@ -218,7 +219,12 @@ export default function Dashboard({ token, onSignOut }) {
       }
 
       if (driveCharacter) {
-        setCharacter(prev => ({ ...DEFAULT_CHARACTER, ...prev, ...driveCharacter }))
+        // Migrate old 4-slot equippedItems to new 11-slot shape on load
+        const migratedEquipped = 'weapon' in (driveCharacter.equippedItems || {})
+          ? migrateEquippedItems(driveCharacter.equippedItems)
+          : driveCharacter.equippedItems
+        const migratedChar = { ...driveCharacter, equippedItems: migratedEquipped }
+        setCharacter(prev => ({ ...DEFAULT_CHARACTER, ...prev, ...migratedChar }))
         if (!driveCharacter.class) setShowCharacterSelect(true)
       } else {
         // First launch — show class selection
@@ -367,29 +373,30 @@ export default function Dashboard({ token, onSignOut }) {
       const taskObj = tasks.find(t => t.id === taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
 
-      // XP: scroll double → class perk → tome bonus → arcane pendant flat bonus
+      // XP: scroll double → class perk → tome bonus → flat XP bonuses from all equipped items
       const scrolled = xpDoubleActive
       if (scrolled) setXpDoubleActive(false)
       const baseXP = applyXpPerk(scrolled ? xp * 2 : xp, character.class, difficulty)
       const tomeBonus = getTomeBonus(character, baseXP)
-      const accessory = character.equippedItems?.accessory
-      const pendantBonus = accessory === 'arcane-pendant' ? (ITEMS['arcane-pendant'].xpFlatBonus || 0) : 0
-      const finalXP = baseXP + tomeBonus + pendantBonus
+      const eqIds = Object.values(character.equippedItems || {}).filter(Boolean)
+      const xpFlatBonus = eqIds.reduce((sum, id) => sum + (ITEMS[id]?.xpFlatBonus || 0), 0)
+      const finalXP = baseXP + tomeBonus + xpFlatBonus
 
-      // Coins: accessory perks → philosopher's stone passive
+      // Coins: per-difficulty perks, fortune proc, philosopher passive
       let finalCoins = coinValue
-      if (accessory === 'ring-of-focus' && difficulty === 'legendary') finalCoins += ITEMS['ring-of-focus'].legendaryCoinsBonus
-      if (accessory === 'rogues-signet' && difficulty === 'normal') finalCoins += ITEMS['rogues-signet'].normalCoinsBonus
-      const fortuned = accessory === 'fortune-amulet' && Math.random() < 0.1
+      if (difficulty === 'legendary') eqIds.forEach(id => { finalCoins += ITEMS[id]?.legendaryCoinsBonus || 0 })
+      if (difficulty === 'normal')    eqIds.forEach(id => { finalCoins += ITEMS[id]?.normalCoinsBonus || 0 })
+      const fortuned = eqIds.includes('fortune-amulet') && Math.random() < 0.1
       if (fortuned) finalCoins *= 2
       finalCoins += getPhilosopherBonus(character, finalXP)
 
-      // Cleric's Amulet: passive heal 1 HP to first active boss on any quest
-      if (accessory === 'clerics-amulet') {
+      // Boss HP restore: any equipped item with bossHealPerQuest property
+      const bossHealAmount = eqIds.reduce((sum, id) => sum + (ITEMS[id]?.bossHealPerQuest || 0), 0)
+      if (bossHealAmount > 0) {
         const target = habits.find(h => h.status === 'active')
         if (target && target.boss.currentHP < target.boss.maxHP) {
           const updatedHabits = habits.map(h =>
-            h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: Math.min(h.boss.maxHP, h.boss.currentHP + 1) } } : h
+            h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: Math.min(h.boss.maxHP, h.boss.currentHP + bossHealAmount) } } : h
           )
           setHabits(updatedHabits)
           saveHabits(updatedHabits)
@@ -466,7 +473,13 @@ export default function Dashboard({ token, onSignOut }) {
   async function handleEquipItem(itemId) {
     const item = ITEMS[itemId]
     if (!item?.slot || !character.ownedItems.includes(itemId)) return
-    const updated = { ...character, equippedItems: { ...character.equippedItems, [item.slot]: itemId } }
+    let targetSlot = item.slot
+    if (item.slot === 'ring') {
+      if (!character.equippedItems?.['ring-1']) targetSlot = 'ring-1'
+      else if (!character.equippedItems?.['ring-2']) targetSlot = 'ring-2'
+      else targetSlot = 'ring-1' // both full — replace ring-1
+    }
+    const updated = { ...character, equippedItems: { ...character.equippedItems, [targetSlot]: itemId } }
     setCharacter(updated)
     await saveCharacter(token, updated)
     setToast(`${item.emoji} ${item.name} equipped!`)
@@ -521,9 +534,16 @@ export default function Dashboard({ token, onSignOut }) {
     } else {
       if (!character.ownedItems.includes(itemId)) return
       updated = { ...updated, ownedItems: character.ownedItems.filter(id => id !== itemId) }
-      // Unequip if this item was in a slot
-      if (item.slot && character.equippedItems?.[item.slot] === itemId) {
-        updated = { ...updated, equippedItems: { ...updated.equippedItems, [item.slot]: null } }
+      // Unequip if this item was in any slot (rings can be in ring-1 or ring-2)
+      if (item.slot) {
+        const newEquipped = { ...updated.equippedItems }
+        if (item.slot === 'ring') {
+          if (newEquipped['ring-1'] === itemId) newEquipped['ring-1'] = null
+          if (newEquipped['ring-2'] === itemId) newEquipped['ring-2'] = null
+        } else if (newEquipped[item.slot] === itemId) {
+          newEquipped[item.slot] = null
+        }
+        updated = { ...updated, equippedItems: newEquipped }
       }
     }
 
@@ -923,21 +943,27 @@ export default function Dashboard({ token, onSignOut }) {
             {syncStatus === 'scope' && <span className="sync-dot sync-dot--error" title="Sign out and back in to enable Drive sync" />}
             {syncStatus === 'network' && <span className="sync-dot sync-dot--warn" title="Drive sync unavailable" />}
             <button
-              className="glossary-btn"
+              className={`nav-btn${view === 'chronicle' ? ' nav-btn--active' : ''}`}
               onClick={() => setView(v => v === 'chronicle' ? 'quests' : 'chronicle')}
-              title={view === 'chronicle' ? 'Back to today\'s quests' : 'View your chronicle'}
             >
-              {view === 'chronicle' ? '⚔️' : '📊'}
+              <span className="nav-btn-icon">📊</span>
+              <span className="nav-btn-label">Stats</span>
             </button>
             <button
-              className="glossary-btn"
+              className={`nav-btn${(view === 'character' || view === 'shop') ? ' nav-btn--active' : ''}`}
               onClick={() => setView(v => (v === 'character' || v === 'shop') ? 'quests' : 'character')}
-              title={(view === 'character' || view === 'shop') ? 'Back to today\'s quests' : 'View character'}
             >
-              👤
+              <span className="nav-btn-icon">👤</span>
+              <span className="nav-btn-label">Hero</span>
             </button>
-            <button className="glossary-btn" onClick={() => setShowGlossary(true)} title="Edit D&D vocabulary glossary">📜</button>
-            <button className="glossary-btn" onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
+            <button className="nav-btn" onClick={() => setShowGlossary(true)}>
+              <span className="nav-btn-icon">📜</span>
+              <span className="nav-btn-label">Lore</span>
+            </button>
+            <button className="nav-btn" onClick={() => setShowSettings(true)}>
+              <span className="nav-btn-icon">⚙️</span>
+              <span className="nav-btn-label">Settings</span>
+            </button>
             <button className="signout-btn" onClick={onSignOut}>Sign out</button>
           </div>
         </div>
@@ -994,7 +1020,8 @@ export default function Dashboard({ token, onSignOut }) {
             points={points}
             bossesDefeated={defeatedHabits.length}
             onChangeClass={() => setShowCharacterSelect(true)}
-            onVisitShop={() => setView('shop')}
+            onVisitShop={(cat) => { setShopStartCategory(cat || 'weapon'); setView('shop') }}
+            onSlotTap={(cat) => { setShopStartCategory(cat); setView('shop') }}
             onBossJournal={() => setShowBossJournal(true)}
           />
         )}
@@ -1009,6 +1036,7 @@ export default function Dashboard({ token, onSignOut }) {
             onUse={handleUseConsumable}
             onSell={handleSellItem}
             onBack={() => setView('character')}
+            startCategory={shopStartCategory}
           />
         )}
 

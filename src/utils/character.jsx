@@ -41,7 +41,19 @@ export const CLASS_ORDER = ['warrior', 'mage', 'rogue', 'cleric', 'ranger']
 export const DEFAULT_CHARACTER = {
   class: null,
   ownedItems: [],
-  equippedItems: { weapon: null, head: null, body: null, accessory: null },
+  equippedItems: {
+    'main-hand': null,
+    'off-hand':  null,
+    'head':      null,
+    'earrings':  null,
+    'body':      null,
+    'cloak':     null,
+    'neck':      null,
+    'ring-1':    null,
+    'ring-2':    null,
+    'bracers':   null,
+    'boots':     null,
+  },
   consumables: {},
   unlockedMilestones: [],
 }

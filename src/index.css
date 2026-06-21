@@ -1296,21 +1296,31 @@ body {
 
 /* ── Glossary button in header ── */
 
-.glossary-btn {
+.nav-btn {
   background: none;
   border: none;
-  font-size: 18px;
   cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 6px;
-  opacity: 0.7;
-  transition: opacity 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+.nav-btn:hover { opacity: 1; }
+.nav-btn--active { opacity: 1; }
+.nav-btn-icon { font-size: 18px; line-height: 1; }
+.nav-btn-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
   line-height: 1;
 }
-
-.glossary-btn:hover {
-  opacity: 1;
-}
+.nav-btn--active .nav-btn-label { color: var(--accent-light); }
 
 /* --- Chronicle view --- */
 .chronicle-cards {
@@ -2310,38 +2320,96 @@ body {
   margin-bottom: -8px;
 }
 
-.equipment-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+/* ── Paper Doll ──────────────────────────────────── */
+.doll-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 8px;
 }
-.equipment-slot {
+
+.paper-doll {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.doll-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.doll-row--single .doll-slot {
+  width: 100%;
+  max-width: 220px;
+}
+
+.doll-slot {
+  flex: 1;
+  max-width: 140px;
   background: var(--bg-card2);
   border: 1px dashed var(--border);
   border-radius: 10px;
-  padding: 12px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  min-height: 72px;
+  text-align: center;
 }
-.equipment-slot--filled {
+.doll-slot:active {
+  background: var(--bg-card);
+}
+.doll-slot--filled {
   border-style: solid;
   border-color: var(--accent);
+  background: var(--bg-card);
 }
-.equipment-slot-label {
-  font-size: 11px;
+.doll-slot-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.doll-slot--filled .doll-slot-icon {
+  font-size: 24px;
+}
+.doll-slot-name {
+  font-size: 9px;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  line-height: 1;
 }
-.equipment-slot-item {
-  font-size: 14px;
+.doll-slot--filled .doll-slot-name {
+  color: var(--accent-light);
+}
+.doll-slot-label {
+  font-size: 10px;
   color: var(--text-muted);
-  font-style: italic;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
-.equipment-slot--filled .equipment-slot-item {
+.doll-slot--filled .doll-slot-label {
   color: var(--text);
-  font-style: normal;
   font-weight: 600;
+  font-size: 11px;
+  white-space: normal;
+}
+.doll-slot--empty .doll-slot-label {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 600;
+}
+.doll-slot--empty {
+  border-color: color-mix(in srgb, var(--border) 60%, transparent);
 }
 
 .character-actions {

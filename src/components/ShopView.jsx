@@ -4,16 +4,23 @@ import { ITEMS, CATEGORIES, isItemForClass } from '../utils/items'
 const TAB_META = {
   weapon:     { emoji: '⚔️', short: 'Arms' },
   armour:     { emoji: '🛡', short: 'Armour' },
-  accessory:  { emoji: '💍', short: 'Rings' },
+  accessory:  { emoji: '💍', short: 'Jewels' },
   consumable: { emoji: '🧪', short: 'Potions' },
   magic:      { emoji: '✨', short: 'Magic' },
+}
+
+function isEquipped(item, character) {
+  if (!item.slot) return false
+  const eq = character.equippedItems || {}
+  if (item.slot === 'ring') return eq['ring-1'] === item.id || eq['ring-2'] === item.id
+  return eq[item.slot] === item.id
 }
 
 function getState(item, character, coins) {
   const owned    = character.ownedItems?.includes(item.id)
   const count    = character.consumables?.[item.id] || 0
   const hasAny   = owned || count > 0
-  const equipped = item.slot && character.equippedItems?.[item.slot] === item.id
+  const equipped = isEquipped(item, character)
   const canAfford = coins >= item.cost
   const forClass  = isItemForClass(item, character.class)
   const sellPrice = Math.floor(item.cost / 2)
@@ -32,8 +39,8 @@ function getState(item, character, coins) {
   return { type: 'locked' }
 }
 
-export default function ShopView({ character, coins, onBuy, onEquip, onUse, onSell, onBack }) {
-  const [activeCategory, setActiveCategory] = useState('weapon')
+export default function ShopView({ character, coins, onBuy, onEquip, onUse, onSell, onBack, startCategory }) {
+  const [activeCategory, setActiveCategory] = useState(startCategory || 'weapon')
   const [showAll, setShowAll] = useState(false)
 
   const allInCategory = Object.values(ITEMS).filter(i => i.category === activeCategory)
