@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 
-export default function Toast({ message, onDone }) {
+export default function Toast({ message, onUndo, onDone }) {
+  const duration = onUndo ? 5500 : 2200
   const [visible, setVisible] = useState(true)
 
   useEffect(() => {
-    const t = setTimeout(() => setVisible(false), 2200)
+    const t = setTimeout(() => setVisible(false), duration)
     return () => clearTimeout(t)
-  }, [])
+  }, [duration])
 
   useEffect(() => {
     if (!visible) {
@@ -15,9 +16,17 @@ export default function Toast({ message, onDone }) {
     }
   }, [visible, onDone])
 
+  function handleUndo() {
+    onUndo()
+    setVisible(false)
+  }
+
   return (
     <div className={`toast ${visible ? 'toast--in' : 'toast--out'}`}>
-      {message}
+      <span className="toast-message">{message}</span>
+      {onUndo && (
+        <button className="toast-undo-btn" onClick={handleUndo}>Undo</button>
+      )}
     </div>
   )
 }

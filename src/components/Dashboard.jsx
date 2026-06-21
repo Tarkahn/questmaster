@@ -62,11 +62,14 @@ export default function Dashboard({ token, onSignOut }) {
   const {
     points, coins, streak, bestStreak, lastCompletedDate, completedToday,
     level, xpInto, xpNeeded, xpPct,
-    claimedEvents, completeTask, earnCoins, spendCoins, claimEvent,
+    claimedEvents, completeTask, uncompleteTask, earnCoins, spendCoins,
+    removeCoins, claimEvent, unclaimEvent,
     history, resetStats, applyGameState,
   } = useGameState()
   const [xpDoubleActive, setXpDoubleActive] = useState(false)
   const bgmRef = useRef(null)
+  const undoRef = useRef(null)       // current undo callback (null = no undo available)
+  const pendingApiRef = useRef(null) // { taskId, timer } deferred markTaskComplete
   const prevLevelRef = useRef(null)
   const gameStateRef = useRef({ points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history })
   useEffect(() => {
@@ -298,7 +301,14 @@ export default function Dashboard({ token, onSignOut }) {
 
   async function handleComplete(taskId, xp, coinValue, difficulty) {
     try {
-      await markTaskComplete(token, taskId)
+      // If a previous completion is still pending (undo window open), finalize it now
+      if (pendingApiRef.current) {
+        clearTimeout(pendingApiRef.current.timer)
+        await markTaskComplete(token, pendingApiRef.current.taskId)
+        pendingApiRef.current = null
+      }
+
+      const taskObj = tasks.find(t => t.id === taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
 
       // XP: scroll double → class perk → tome bonus → arcane pendant flat bonus
@@ -340,6 +350,23 @@ export default function Dashboard({ token, onSignOut }) {
       if (tomeBonus) notes.push('📚 tome')
       if (fortuned) notes.push('🍀 fortune!')
       const note = notes.length ? ` (${notes.join(', ')})` : ''
+
+      // Defer the actual Google Tasks API call — gives undo window
+      const timer = setTimeout(async () => {
+        try { await markTaskComplete(token, taskId) } catch {}
+        pendingApiRef.current = null
+        undoRef.current = null
+      }, 5500)
+      pendingApiRef.current = { taskId, timer }
+
+      undoRef.current = () => {
+        clearTimeout(pendingApiRef.current?.timer)
+        pendingApiRef.current = null
+        uncompleteTask(finalXP)
+        removeCoins(finalCoins)
+        if (taskObj) setTasks(prev => [taskObj, ...prev])
+      }
+
       setToast(`⚔️ Quest Complete! +${finalXP} XP${note}  +${finalCoins} 🪙`)
     } catch (err) {
       console.error('Failed to complete task:', err)
@@ -581,6 +608,12 @@ export default function Dashboard({ token, onSignOut }) {
     const finalCoins = applyRangerMissionBonus(coinValue, character.class)
                      + getItemMissionBonus(character)
     earnCoins(finalCoins)
+
+    undoRef.current = () => {
+      unclaimEvent(eventId, xp)
+      removeCoins(finalCoins)
+    }
+
     setToast(`🔮 Mission Claimed! +${xp} XP  +${finalCoins} 🪙`)
   }
 
@@ -701,7 +734,13 @@ export default function Dashboard({ token, onSignOut }) {
     <div className="dashboard">
       <audio ref={bgmRef} src={BGM_SRC} loop preload="auto" style={{ display: 'none' }} />
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
-      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {toast && (
+        <Toast
+          message={toast}
+          onUndo={undoRef.current ? () => { undoRef.current?.(); undoRef.current = null } : null}
+          onDone={() => { setToast(null); undoRef.current = null }}
+        />
+      )}
       {showCreateHabit && (
         <CreateHabitModal
           onClose={() => setShowCreateHabit(false)}

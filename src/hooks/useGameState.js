@@ -258,6 +258,49 @@ export function useGameState() {
     })
   }
 
+  function uncompleteTask(xp) {
+    setState(prev => {
+      const points = Math.max(0, prev.points - xp)
+      const history = updateTodaySnapshot(prev.history, s => ({
+        ...s,
+        xpEarned: Math.max(0, s.xpEarned - xp),
+        tasksCompleted: Math.max(0, s.tasksCompleted - 1),
+        xpTotal: points,
+        level: getLevel(points),
+      }))
+      localStorage.setItem(KEYS.points, String(points))
+      localStorage.setItem(KEYS.history, JSON.stringify(history))
+      return { ...prev, points, history }
+    })
+  }
+
+  function unclaimEvent(eventId, xp) {
+    setState(prev => {
+      const points = Math.max(0, prev.points - xp)
+      const ids = (prev.claimedEvents?.ids || []).filter(id => id !== eventId)
+      const claimedEvents = { ...prev.claimedEvents, ids }
+      const history = updateTodaySnapshot(prev.history, s => ({
+        ...s,
+        xpEarned: Math.max(0, s.xpEarned - xp),
+        eventsClaimed: Math.max(0, s.eventsClaimed - 1),
+        xpTotal: points,
+        level: getLevel(points),
+      }))
+      localStorage.setItem(KEYS.points, String(points))
+      localStorage.setItem(KEYS.claimedEvents, JSON.stringify(claimedEvents))
+      localStorage.setItem(KEYS.history, JSON.stringify(history))
+      return { ...prev, points, claimedEvents, history }
+    })
+  }
+
+  function removeCoins(n) {
+    setState(prev => {
+      const coins = Math.max(0, prev.coins - n)
+      localStorage.setItem(KEYS.coins, String(coins))
+      return { ...prev, coins }
+    })
+  }
+
   function resetStats() {
     Object.values(KEYS).forEach(k => localStorage.removeItem(k))
     setState({
@@ -282,9 +325,12 @@ export function useGameState() {
     xpNeeded,
     xpPct: pct,
     completeTask,
+    uncompleteTask,
     earnCoins,
     spendCoins,
+    removeCoins,
     claimEvent,
+    unclaimEvent,
     resetStats,
     applyGameState,
   }
