@@ -60,7 +60,7 @@ export default function ShopView({ character, coins, onBuy, onEquip, onUse, onSe
           onClick={() => setShowAll(v => !v)}
           title={showAll ? 'Showing all items' : 'Showing items for your class'}
         >
-          {showAll ? '🌐 All' : '⭐ My Class'}
+          {showAll ? '⭐ My Class' : '🌐 Show All'}
         </button>
       </div>
 
