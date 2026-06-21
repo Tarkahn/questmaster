@@ -25,6 +25,8 @@ import Toast from './Toast'
 import { CLASSES, DEFAULT_CHARACTER, classDiceBonus, applyXpPerk, applyRangerMissionBonus } from '../utils/character'
 import { setSfxVolume, playLevelUp, playBossStrike, playBossDefeat } from '../utils/audio'
 
+const BGM_SRC = '/audio/Medieval%20Vol.%202%206.mp3'
+
 export default function Dashboard({ token, onSignOut }) {
   const [tasks, setTasks] = useState([])
   const [events, setEvents] = useState([])
@@ -59,6 +61,7 @@ export default function Dashboard({ token, onSignOut }) {
     claimedEvents, completeTask, earnCoins, claimEvent,
     history, resetStats, applyGameState,
   } = useGameState()
+  const bgmRef = useRef(null)
   const prevLevelRef = useRef(null)
   const gameStateRef = useRef({ points, coins, streak, bestStreak, lastCompletedDate, claimedEvents, history })
   useEffect(() => {
@@ -75,6 +78,30 @@ export default function Dashboard({ token, onSignOut }) {
   }, [level])
 
   useEffect(() => { setSfxVolume(settings.sfxVolume ?? 0.7) }, [settings.sfxVolume])
+
+  // Start BGM on first user interaction (browsers block autoplay before that)
+  useEffect(() => {
+    const audio = bgmRef.current
+    if (!audio) return
+    audio.volume = settings.musicVolume ?? 0.3
+
+    const tryPlay = () => audio.play().catch(() => {})
+    // Attempt immediate autoplay; if blocked, start on first tap/click
+    audio.play().catch(() => {
+      const onInteraction = () => {
+        tryPlay()
+        document.removeEventListener('click', onInteraction)
+        document.removeEventListener('touchstart', onInteraction)
+      }
+      document.addEventListener('click', onInteraction)
+      document.addEventListener('touchstart', onInteraction)
+    })
+  }, [])
+
+  // Keep music volume in sync with settings without restarting the track
+  useEffect(() => {
+    if (bgmRef.current) bgmRef.current.volume = settings.musicVolume ?? 0.3
+  }, [settings.musicVolume])
 
   // One-time theme cache sync on mount: merge Drive cache into local so both
   // devices show the same D&D themed titles. Local wins on conflicts so the
@@ -528,6 +555,7 @@ export default function Dashboard({ token, onSignOut }) {
 
   return (
     <div className="dashboard">
+      <audio ref={bgmRef} src={BGM_SRC} loop preload="auto" style={{ display: 'none' }} />
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
       {showCreateHabit && (
         <CreateHabitModal

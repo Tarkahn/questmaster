@@ -3,6 +3,7 @@ const KEY = 'qm_settings'
 export const DEFAULT_SETTINGS = {
   sendNotesToLlm: true,
   sfxVolume: 0.7,
+  musicVolume: 0.3,
 }
 
 export function loadSettings() {

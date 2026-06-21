@@ -20,6 +20,7 @@ export default function SettingsModal({ settings, onSave, onReThemeAll, onClose 
   }
 
   const sfxPct = Math.round((local.sfxVolume ?? 0.7) * 100)
+  const musicPct = Math.round((local.musicVolume ?? 0.3) * 100)
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -59,7 +60,20 @@ export default function SettingsModal({ settings, onSave, onReThemeAll, onClose 
         <div className="settings-section-label">Sound</div>
 
         <div className="settings-row-compact settings-row-compact--slider">
-          <span className="settings-label-sm">🔊 SFX Volume</span>
+          <span className="settings-label-sm">🎵 Music</span>
+          <input
+            type="range"
+            min="0" max="1" step="0.05"
+            value={local.musicVolume ?? 0.3}
+            onChange={e => update('musicVolume', Number(e.target.value))}
+            className="settings-slider"
+            disabled={saving}
+          />
+          <span className="settings-slider-value">{musicPct}%</span>
+        </div>
+
+        <div className="settings-row-compact settings-row-compact--slider">
+          <span className="settings-label-sm">🔊 SFX</span>
           <input
             type="range"
             min="0" max="1" step="0.05"
