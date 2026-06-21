@@ -158,6 +158,7 @@ export default function Dashboard({ token, onSignOut }) {
         { settings: driveSettings },
         { state: driveGameState },
         { character: driveCharacter },
+        { defs: driveRecurring },
       ] = await Promise.all([
         loadFromDrive(token),
         loadGlossary(token),
@@ -165,6 +166,7 @@ export default function Dashboard({ token, onSignOut }) {
         loadSettingsFromDrive(token),
         loadGameState(token),
         loadCharacter(token),
+        loadRecurringFromDrive(token),
       ])
 
       if (error === 'scope') {
@@ -221,6 +223,22 @@ export default function Dashboard({ token, onSignOut }) {
       } else {
         // First launch — show class selection
         setShowCharacterSelect(true)
+      }
+
+      if (driveRecurring !== null) {
+        // Union merge: Drive is source of truth; keep any local-only defs not yet uploaded.
+        const localDefs = loadRecurring()
+        const driveIds = new Set(driveRecurring.map(d => d.id))
+        const merged = [...driveRecurring, ...localDefs.filter(d => !driveIds.has(d.id))]
+        setRecurring(merged)
+        saveRecurring(merged)
+        if (merged.length !== driveRecurring.length) {
+          saveRecurringToDrive(token, merged)
+        }
+      } else {
+        // No Drive file yet — upload what we have locally.
+        const localDefs = loadRecurring()
+        if (localDefs.length > 0) saveRecurringToDrive(token, localDefs)
       }
     }
 
