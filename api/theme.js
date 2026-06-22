@@ -59,7 +59,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'claude-haiku-4-5',
         max_tokens: 1024,
-        temperature: 0,
+        temperature: 0.9,
         system: systemPrompt,
         messages: [{
           role: 'user',
