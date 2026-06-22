@@ -4,6 +4,7 @@ export const DEFAULT_SETTINGS = {
   sendNotesToLlm: true,
   sfxVolume: 0.7,
   musicVolume: 0.3,
+  missionLookAhead: 0, // days of future missions to show: 0 (today), 3, 7, 30
 }
 
 export function loadSettings() {

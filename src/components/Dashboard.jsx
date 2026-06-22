@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, markTaskIncomplete, createTask, createSubtask, createEvent, deleteTask, updateTask, deleteEvent, updateEvent } from '../utils/api'
+import { fetchTodaysTasks, fetchUpcomingEvents, markTaskComplete, markTaskIncomplete, createTask, createSubtask, createEvent, deleteTask, updateTask, deleteEvent, updateEvent } from '../utils/api'
 import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
@@ -34,6 +34,50 @@ import { ITEMS, getItemDiceBonus, getPhilosopherBonus, getTomeBonus, getItemMiss
 import { setSfxVolume, playLevelUp, playBossStrike, playBossDefeat } from '../utils/audio'
 
 const BGM_SRC = '/audio/Medieval%20Vol.%202%206.mp3'
+
+const LOOKAHEAD_OPTIONS = [
+  { days: 0,  label: 'Today' },
+  { days: 3,  label: '3 days' },
+  { days: 7,  label: '7 days' },
+  { days: 30, label: '1 month' },
+]
+
+// Returns a Date at local midnight for an event's start (handles all-day + timed).
+function eventStartDate(event) {
+  if (event.start?.date) {
+    const [y, m, d] = event.start.date.split('-').map(Number)
+    return new Date(y, m - 1, d)
+  }
+  if (event.start?.dateTime) {
+    const dt = new Date(event.start.dateTime)
+    return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate())
+  }
+  return null
+}
+
+function dayHeaderLabel(date) {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const diff = Math.round((date - today) / 86400000)
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Tomorrow'
+  return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+}
+
+// Groups events (already sorted by start time) into consecutive same-day buckets.
+function groupEventsByDay(events) {
+  const groups = []
+  let cur = null
+  for (const ev of events) {
+    const d = eventStartDate(ev)
+    const key = d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'unknown'
+    if (!cur || cur.key !== key) {
+      cur = { key, label: d ? dayHeaderLabel(d) : 'Scheduled', events: [] }
+      groups.push(cur)
+    }
+    cur.events.push(ev)
+  }
+  return groups
+}
 
 export default function Dashboard({ token, onSignOut }) {
   const [tasks, setTasks] = useState([])
@@ -347,7 +391,7 @@ export default function Dashboard({ token, onSignOut }) {
 
       const [{ tasks: t, subtasksByParent: subs }, e] = await Promise.all([
         fetchTodaysTasks(token),
-        fetchTodaysEvents(token),
+        fetchUpcomingEvents(token, settings.missionLookAhead || 0),
       ])
       setTasks(t)
       setSubtasksByParent(subs)
@@ -404,7 +448,7 @@ export default function Dashboard({ token, onSignOut }) {
         setError(err.message)
       }
     }
-  }, [token, glossary, settings.sendNotesToLlm, handleSignOut])
+  }, [token, glossary, settings.sendNotesToLlm, settings.missionLookAhead, handleSignOut])
 
   useEffect(() => { loadTasksAndEvents() }, [loadTasksAndEvents])
 
@@ -822,6 +866,16 @@ export default function Dashboard({ token, onSignOut }) {
     saveSettingsToDrive(token, next)
   }
 
+  // Mission look-ahead filter — persists in settings (synced via Drive) and the
+  // missionLookAhead useCallback dep triggers a re-fetch of the wider window.
+  function handleSetLookAhead(days) {
+    if ((settings.missionLookAhead || 0) === days) return
+    const next = { ...settings, missionLookAhead: days }
+    setSettings(next)
+    saveSettings(next)
+    saveSettingsToDrive(token, next)
+  }
+
   async function handleReThemeAll() {
     clearThemeCache()
     await saveThemeCache(token, {})
@@ -1005,6 +1059,25 @@ export default function Dashboard({ token, onSignOut }) {
 
   // Display order: undated quests keep their manual slot; dated quests sorted by date.
   const orderedTasks = computeDisplayOrder(tasks, taskOrder.order)
+
+  // Mission look-ahead window + day grouping for the multi-day view.
+  const lookAhead = settings.missionLookAhead || 0
+  const groupedEvents = lookAhead > 0 ? groupEventsByDay(events) : null
+
+  const renderEventItem = (event) => (
+    <EventItem
+      key={event.id}
+      event={event}
+      themedTitle={themedTitles[event.id]}
+      claimed={isEventClaimed(event.id)}
+      difficulty={getEffectiveDifficulty(event.id)}
+      coinValue={applyRangerMissionBonus(BASE_COIN_VALUE[getEffectiveDifficulty(event.id)] || BASE_COIN_VALUE.normal, character.class) + getItemMissionBonus(character)}
+      onClaim={handleClaim}
+      onUnclaim={handleUnclaimEvent}
+      onDifficultyChange={handleDifficultyChange}
+      onEdit={() => setEditingEvent(event)}
+    />
+  )
 
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
@@ -1330,27 +1403,32 @@ export default function Dashboard({ token, onSignOut }) {
 
             <section className="section">
               <div className="section-title-row">
-                <h2 className="section-title">📅 Today's Missions</h2>
+                <h2 className="section-title">📅 {lookAhead > 0 ? 'Upcoming Missions' : "Today's Missions"}</h2>
                 <button className="add-habit-btn" onClick={() => setShowCreateMission(true)}>
                   + New Mission
                 </button>
               </div>
+              <div className="lookahead-filter" role="group" aria-label="Mission look-ahead window">
+                {LOOKAHEAD_OPTIONS.map(opt => (
+                  <button
+                    key={opt.days}
+                    className={`lookahead-btn${lookAhead === opt.days ? ' lookahead-btn--active' : ''}`}
+                    onClick={() => handleSetLookAhead(opt.days)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               {events.length === 0
-                ? <p className="empty">No missions today — rest up, hero.</p>
-                : events.map(event => (
-                    <EventItem
-                      key={event.id}
-                      event={event}
-                      themedTitle={themedTitles[event.id]}
-                      claimed={isEventClaimed(event.id)}
-                      difficulty={getEffectiveDifficulty(event.id)}
-                      coinValue={applyRangerMissionBonus(BASE_COIN_VALUE[getEffectiveDifficulty(event.id)] || BASE_COIN_VALUE.normal, character.class) + getItemMissionBonus(character)}
-                      onClaim={handleClaim}
-                      onUnclaim={handleUnclaimEvent}
-                      onDifficultyChange={handleDifficultyChange}
-                      onEdit={() => setEditingEvent(event)}
-                    />
-                  ))
+                ? <p className="empty">{lookAhead > 0 ? 'No missions in this window — clear skies ahead.' : 'No missions today — rest up, hero.'}</p>
+                : lookAhead > 0
+                  ? groupedEvents.map(group => (
+                      <div key={group.key} className="mission-day-group">
+                        <div className="mission-day-header">{group.label}</div>
+                        {group.events.map(renderEventItem)}
+                      </div>
+                    ))
+                  : events.map(renderEventItem)
               }
             </section>
 

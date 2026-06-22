@@ -179,18 +179,20 @@ export async function updateEvent(token, eventId, { title, date, start, end, all
   return res.json()
 }
 
-export async function fetchTodaysEvents(token) {
+// daysAhead: 0 = today only, 3 = today + next 3 days, etc.
+export async function fetchUpcomingEvents(token, daysAhead = 0) {
   const start = new Date()
   start.setHours(0, 0, 0, 0)
   const end = new Date()
   end.setHours(23, 59, 59, 999)
+  end.setDate(end.getDate() + Math.max(0, daysAhead))
 
   const params = new URLSearchParams({
     timeMin: start.toISOString(),
     timeMax: end.toISOString(),
     singleEvents: 'true',
     orderBy: 'startTime',
-    maxResults: '20',
+    maxResults: daysAhead >= 14 ? '100' : '50',
   })
 
   const res = await fetch(
