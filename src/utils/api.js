@@ -11,7 +11,39 @@ export async function fetchTodaysTasks(token) {
   )
   if (!res.ok) throw new Error('Failed to fetch tasks')
   const data = await res.json()
-  return (data.items || []).filter(t => !t.parent)
+  const items = data.items || []
+
+  const tasks = items.filter(t => !t.parent)
+  const subtasksByParent = {}
+  for (const t of items) {
+    if (t.parent) {
+      (subtasksByParent[t.parent] || (subtasksByParent[t.parent] = [])).push(t)
+    }
+  }
+  // Order subtasks by Google's position field so they keep their list order.
+  for (const k of Object.keys(subtasksByParent)) {
+    subtasksByParent[k].sort((a, b) => (a.position || '').localeCompare(b.position || ''))
+  }
+
+  return { tasks, subtasksByParent }
+}
+
+// Creates a subtask nested under parentId. Google Tasks links a subtask via the
+// `parent` query param on insert (the body cannot set `parent` directly).
+export async function createSubtask(token, parentId, { title, notes }) {
+  const body = { title }
+  if (notes) body.notes = notes
+
+  const res = await fetch(
+    `${BASE}/tasks/v1/lists/@default/tasks?parent=${encodeURIComponent(parentId)}`,
+    {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  )
+  if (!res.ok) throw new Error(`Failed to create subtask: ${res.status}`)
+  return res.json()
 }
 
 export async function markTaskComplete(token, taskId) {

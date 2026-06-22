@@ -460,6 +460,156 @@ body {
   to { opacity: 0.3; transform: scale(0.98); }
 }
 
+/* ── Side Quests (subtasks) ── */
+.task-block { margin-bottom: 8px; }
+.task-block .task-item { margin-bottom: 0; }
+
+.task-d20--locked {
+  border-color: var(--border);
+  background: var(--bg-card2);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.task-d20--locked .d20-inner { font-size: 12px; }
+
+.sidequest-toggle {
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: var(--accent-light);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.sidequest-toggle:hover {
+  background: rgba(139, 92, 246, 0.22);
+  border-color: var(--accent);
+}
+.sidequest-toggle--add {
+  background: none;
+  border-style: dashed;
+  color: var(--text-muted);
+}
+.sidequest-toggle--add:hover {
+  color: var(--accent-light);
+  border-color: var(--accent);
+}
+
+.subtask-area {
+  margin: 4px 0 2px 18px;
+  padding-left: 14px;
+  border-left: 2px dashed rgba(139, 92, 246, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+}
+
+.task-item--sub {
+  padding: 9px 12px;
+  background: var(--bg-card2);
+}
+.task-item--sub .d20-wrap {
+  width: 30px;
+  height: 30px;
+}
+.task-item--sub .task-d20 {
+  width: 22px;
+  height: 22px;
+  border-width: 2px;
+}
+.task-item--sub .task-title { font-size: 13.5px; }
+
+.subtask-add-more {
+  align-self: flex-start;
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.subtask-add-more:hover {
+  color: var(--accent-light);
+  border-color: var(--accent);
+}
+
+/* ── Side Quest modal ── */
+.sidequest-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+  justify-content: center;
+}
+.sidequest-spinner {
+  font-size: 18px;
+  color: var(--accent-light);
+  animation: spin 1.2s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.sidequest-note {
+  font-size: 13px;
+  color: var(--gold);
+  margin: 0 0 4px;
+}
+.sidequest-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sidequest-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sidequest-bullet {
+  color: var(--accent-light);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.sidequest-row .form-input { flex: 1; }
+.sidequest-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.sidequest-remove:hover { color: var(--fire); }
+.sidequest-add {
+  align-self: flex-start;
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: 8px;
+}
+.sidequest-add:hover { color: var(--accent-light); border-color: var(--accent); }
+.sidequest-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 10px 0 0;
+}
+
 /* ── D20 Die Button ── */
 
 .d20-wrap {

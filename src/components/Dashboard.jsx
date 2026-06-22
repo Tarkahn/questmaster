@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, markTaskIncomplete, createTask, createEvent, deleteTask, updateTask, deleteEvent, updateEvent } from '../utils/api'
+import { fetchTodaysTasks, fetchTodaysEvents, markTaskComplete, markTaskIncomplete, createTask, createSubtask, createEvent, deleteTask, updateTask, deleteEvent, updateEvent } from '../utils/api'
 import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
@@ -15,6 +15,7 @@ import BossCard from './BossCard'
 import CreateHabitModal from './CreateHabitModal'
 import CreateQuestModal from './CreateQuestModal'
 import CreateMissionModal from './CreateMissionModal'
+import SideQuestModal from './SideQuestModal'
 import EditQuestModal from './EditQuestModal'
 import EditMissionModal from './EditMissionModal'
 import GlossaryModal from './GlossaryModal'
@@ -34,6 +35,8 @@ const BGM_SRC = '/audio/Medieval%20Vol.%202%206.mp3'
 
 export default function Dashboard({ token, onSignOut }) {
   const [tasks, setTasks] = useState([])
+  const [subtasksByParent, setSubtasksByParent] = useState({})
+  const [sideQuestParent, setSideQuestParent] = useState(null) // parent task obj for the Side Quest modal
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -301,12 +304,15 @@ export default function Dashboard({ token, onSignOut }) {
         }
       }
 
-      const [t, e] = await Promise.all([
+      const [{ tasks: t, subtasksByParent: subs }, e] = await Promise.all([
         fetchTodaysTasks(token),
         fetchTodaysEvents(token),
       ])
       setTasks(t)
+      setSubtasksByParent(subs)
       setEvents(e)
+
+      const allSubtasks = Object.values(subs).flat()
 
       // Record the first time each task is seen so coin decay can be computed.
       const today = new Date().toISOString().slice(0, 10)
@@ -314,7 +320,7 @@ export default function Dashboard({ token, onSignOut }) {
         try { return JSON.parse(localStorage.getItem('qm_task_seen') || '{}') } catch { return {} }
       })()
       let changed = false
-      for (const task of t) {
+      for (const task of [...t, ...allSubtasks]) {
         if (!seen[task.id]) { seen[task.id] = today; changed = true }
       }
       if (changed) localStorage.setItem('qm_task_seen', JSON.stringify(seen))
@@ -325,6 +331,11 @@ export default function Dashboard({ token, onSignOut }) {
       const currentRecurringDefs = loadRecurring()
       const allItems = [
         ...t.map(task => ({
+          id: task.id,
+          title: task.title,
+          notes: includeNotes ? task.notes : undefined,
+        })),
+        ...allSubtasks.map(task => ({
           id: task.id,
           title: task.title,
           notes: includeNotes ? task.notes : undefined,
@@ -368,70 +379,141 @@ export default function Dashboard({ token, onSignOut }) {
       .catch(() => {})
   }, [recurring]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Shared reward pipeline used by both top-level quests and side quests.
+  // Caller is responsible for optimistically removing the task from its list
+  // before calling. Returns the toast string (caller decides whether to show it).
+  async function completeQuest(taskObj, taskId, xp, coinValue, difficulty) {
+    // XP: scroll double → class perk → tome bonus → flat XP bonuses from all equipped items
+    const scrolled = xpDoubleActive
+    if (scrolled) setXpDoubleActive(false)
+    const baseXP = applyXpPerk(scrolled ? xp * 2 : xp, character.class, difficulty)
+    const tomeBonus = getTomeBonus(character, baseXP)
+    const eqIds = Object.values(character.equippedItems || {}).filter(Boolean)
+    const xpFlatBonus = eqIds.reduce((sum, id) => sum + (ITEMS[id]?.xpFlatBonus || 0), 0)
+    const finalXP = baseXP + tomeBonus + xpFlatBonus
+
+    // Coins: per-difficulty perks, fortune proc, philosopher passive
+    let finalCoins = coinValue
+    if (difficulty === 'legendary') eqIds.forEach(id => { finalCoins += ITEMS[id]?.legendaryCoinsBonus || 0 })
+    if (difficulty === 'normal')    eqIds.forEach(id => { finalCoins += ITEMS[id]?.normalCoinsBonus || 0 })
+    const fortuned = eqIds.includes('fortune-amulet') && Math.random() < 0.1
+    if (fortuned) finalCoins *= 2
+    finalCoins += getPhilosopherBonus(character, finalXP)
+
+    // Boss HP restore: any equipped item with bossHealPerQuest property
+    const bossHealAmount = eqIds.reduce((sum, id) => sum + (ITEMS[id]?.bossHealPerQuest || 0), 0)
+    if (bossHealAmount > 0) {
+      const target = habits.find(h => h.status === 'active')
+      if (target && target.boss.currentHP < target.boss.maxHP) {
+        const updatedHabits = habits.map(h =>
+          h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: Math.min(h.boss.maxHP, h.boss.currentHP + bossHealAmount) } } : h
+        )
+        setHabits(updatedHabits)
+        saveHabits(updatedHabits)
+        saveToDrive(token, updatedHabits)
+      }
+    }
+
+    completeTask(finalXP)
+    earnCoins(finalCoins)
+    await markTaskComplete(token, taskId)
+
+    // Move task to "Completed Today" section
+    const entry = {
+      task: taskObj,
+      themedTitle: themedTitles[taskId] || null,
+      xp: finalXP,
+      coins: finalCoins,
+      difficulty,
+    }
+    setCompletedTasks(prev => {
+      const next = [entry, ...prev]
+      const today = new Date().toISOString().slice(0, 10)
+      localStorage.setItem('qm_completed_today', JSON.stringify({ date: today, entries: next }))
+      return next
+    })
+
+    const notes = []
+    if (scrolled) notes.push('×2 scroll')
+    if (baseXP !== (scrolled ? xp * 2 : xp)) notes.push(`${CLASSES[character.class]?.name} perk`)
+    if (tomeBonus) notes.push('📚 tome')
+    if (fortuned) notes.push('🍀 fortune!')
+    const note = notes.length ? ` (${notes.join(', ')})` : ''
+    return { finalXP, finalCoins, note }
+  }
+
   async function handleComplete(taskId, xp, coinValue, difficulty) {
     try {
       const taskObj = tasks.find(t => t.id === taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
-
-      // XP: scroll double → class perk → tome bonus → flat XP bonuses from all equipped items
-      const scrolled = xpDoubleActive
-      if (scrolled) setXpDoubleActive(false)
-      const baseXP = applyXpPerk(scrolled ? xp * 2 : xp, character.class, difficulty)
-      const tomeBonus = getTomeBonus(character, baseXP)
-      const eqIds = Object.values(character.equippedItems || {}).filter(Boolean)
-      const xpFlatBonus = eqIds.reduce((sum, id) => sum + (ITEMS[id]?.xpFlatBonus || 0), 0)
-      const finalXP = baseXP + tomeBonus + xpFlatBonus
-
-      // Coins: per-difficulty perks, fortune proc, philosopher passive
-      let finalCoins = coinValue
-      if (difficulty === 'legendary') eqIds.forEach(id => { finalCoins += ITEMS[id]?.legendaryCoinsBonus || 0 })
-      if (difficulty === 'normal')    eqIds.forEach(id => { finalCoins += ITEMS[id]?.normalCoinsBonus || 0 })
-      const fortuned = eqIds.includes('fortune-amulet') && Math.random() < 0.1
-      if (fortuned) finalCoins *= 2
-      finalCoins += getPhilosopherBonus(character, finalXP)
-
-      // Boss HP restore: any equipped item with bossHealPerQuest property
-      const bossHealAmount = eqIds.reduce((sum, id) => sum + (ITEMS[id]?.bossHealPerQuest || 0), 0)
-      if (bossHealAmount > 0) {
-        const target = habits.find(h => h.status === 'active')
-        if (target && target.boss.currentHP < target.boss.maxHP) {
-          const updatedHabits = habits.map(h =>
-            h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: Math.min(h.boss.maxHP, h.boss.currentHP + bossHealAmount) } } : h
-          )
-          setHabits(updatedHabits)
-          saveHabits(updatedHabits)
-          saveToDrive(token, updatedHabits)
-        }
-      }
-
-      completeTask(finalXP)
-      earnCoins(finalCoins)
-      await markTaskComplete(token, taskId)
-
-      // Move task to "Completed Today" section
-      const entry = {
-        task: taskObj,
-        themedTitle: themedTitles[taskId] || null,
-        xp: finalXP,
-        coins: finalCoins,
-        difficulty,
-      }
-      setCompletedTasks(prev => {
-        const next = [entry, ...prev]
-        const today = new Date().toISOString().slice(0, 10)
-        localStorage.setItem('qm_completed_today', JSON.stringify({ date: today, entries: next }))
-        return next
-      })
-
-      const notes = []
-      if (scrolled) notes.push('×2 scroll')
-      if (baseXP !== (scrolled ? xp * 2 : xp)) notes.push(`${CLASSES[character.class]?.name} perk`)
-      if (tomeBonus) notes.push('📚 tome')
-      if (fortuned) notes.push('🍀 fortune!')
-      const note = notes.length ? ` (${notes.join(', ')})` : ''
+      const { finalXP, finalCoins, note } = await completeQuest(taskObj, taskId, xp, coinValue, difficulty)
       setToast(`⚔️ Quest Complete! +${finalXP} XP${note}  +${finalCoins} 🪙`)
     } catch (err) {
       console.error('Failed to complete task:', err)
+    }
+  }
+
+  async function handleCompleteSubtask(parentId, taskId, xp, coinValue, difficulty) {
+    try {
+      const taskObj = (subtasksByParent[parentId] || []).find(s => s.id === taskId)
+      let remaining = 0
+      setSubtasksByParent(prev => {
+        const next = { ...prev }
+        const list = (next[parentId] || []).filter(s => s.id !== taskId)
+        remaining = list.length
+        if (list.length) next[parentId] = list
+        else delete next[parentId]
+        return next
+      })
+      const { finalXP, finalCoins, note } = await completeQuest(taskObj, taskId, xp, coinValue, difficulty)
+      if (remaining === 0) {
+        setToast(`✨ All side quests cleared! +${finalXP} XP${note}  +${finalCoins} 🪙 — the main quest awaits.`)
+      } else {
+        setToast(`⚔️ Side Quest done! +${finalXP} XP${note}  +${finalCoins} 🪙  (${remaining} left)`)
+      }
+    } catch (err) {
+      console.error('Failed to complete side quest:', err)
+    }
+  }
+
+  function handleOpenSideQuests(taskObj) {
+    setSideQuestParent(taskObj)
+  }
+
+  async function handleCreateSideQuests(parentId, titles) {
+    const created = []
+    for (const title of titles) {
+      try {
+        const sub = await createSubtask(token, parentId, { title })
+        created.push(sub)
+      } catch (err) {
+        console.error('Failed to create side quest:', err)
+      }
+    }
+    if (created.length) {
+      // Google returns subtasks in reverse insert order; sort by position on reload.
+      setSubtasksByParent(prev => ({
+        ...prev,
+        [parentId]: [...(prev[parentId] || []), ...created],
+      }))
+      setToast(`⚡ ${created.length} side quest${created.length > 1 ? 's' : ''} added!`)
+      loadTasksAndEvents() // refetch to get correct order + theme the new subtasks
+    }
+    setSideQuestParent(null)
+  }
+
+  async function handleDeleteSubtask(parentId, taskId) {
+    setSubtasksByParent(prev => {
+      const next = { ...prev }
+      const list = (next[parentId] || []).filter(s => s.id !== taskId)
+      if (list.length) next[parentId] = list
+      else delete next[parentId]
+      return next
+    })
+    try {
+      await deleteTask(token, taskId)
+    } catch (err) {
+      console.error('Failed to delete side quest:', err)
     }
   }
 
@@ -440,7 +522,15 @@ export default function Dashboard({ token, onSignOut }) {
       await markTaskIncomplete(token, entry.task.id)
       uncompleteTask(entry.xp)
       removeCoins(entry.coins)
-      setTasks(prev => [entry.task, ...prev])
+      // A restored side quest goes back under its parent, not the top-level list.
+      if (entry.task.parent) {
+        setSubtasksByParent(prev => ({
+          ...prev,
+          [entry.task.parent]: [...(prev[entry.task.parent] || []), entry.task],
+        }))
+      } else {
+        setTasks(prev => [entry.task, ...prev])
+      }
       setCompletedTasks(prev => {
         const next = prev.filter(e => e.task.id !== entry.task.id)
         const today = new Date().toISOString().slice(0, 10)
@@ -897,6 +987,14 @@ export default function Dashboard({ token, onSignOut }) {
           onCreate={handleCreateMission}
         />
       )}
+      {sideQuestParent && (
+        <SideQuestModal
+          parentTask={sideQuestParent}
+          parentThemedTitle={themedTitles[sideQuestParent.id]}
+          onCreate={handleCreateSideQuests}
+          onClose={() => setSideQuestParent(null)}
+        />
+      )}
       {editingTask && (
         <EditQuestModal
           task={editingTask}
@@ -1073,6 +1171,14 @@ export default function Dashboard({ token, onSignOut }) {
                       onComplete={handleComplete}
                       onDifficultyChange={handleDifficultyChange}
                       onEdit={() => setEditingTask(task)}
+                      subtasks={subtasksByParent[task.id] || []}
+                      themedTitles={themedTitles}
+                      getEffectiveDifficulty={getEffectiveDifficulty}
+                      taskSeenMap={taskSeenMap}
+                      characterClass={character.class}
+                      onCompleteSubtask={handleCompleteSubtask}
+                      onDeleteSubtask={handleDeleteSubtask}
+                      onAddSideQuests={() => handleOpenSideQuests(task)}
                     />
                   ))
               }
