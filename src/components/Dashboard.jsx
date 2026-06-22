@@ -235,13 +235,31 @@ export default function Dashboard({ token, onSignOut }) {
       }
 
       if (driveRecurring !== null) {
-        // Union merge: Drive is source of truth; keep any local-only defs not yet uploaded.
+        // Union merge: Drive is source of truth for a def's content (title/days/
+        // active), but lastMaterializedDate takes the MOST RECENT of the two.
+        // Otherwise a stale Drive copy (flag still null/yesterday) would clobber
+        // the local "materialized today" flag and trigger re-materialization —
+        // the cause of duplicate-quest storms.
         const localDefs = loadRecurring()
+        const localById = new Map(localDefs.map(d => [d.id, d]))
         const driveIds = new Set(driveRecurring.map(d => d.id))
-        const merged = [...driveRecurring, ...localDefs.filter(d => !driveIds.has(d.id))]
+        const merged = driveRecurring.map(d => {
+          const local = localById.get(d.id)
+          if (!local) return d
+          const newest = [d.lastMaterializedDate, local.lastMaterializedDate]
+            .filter(Boolean).sort().pop() || null
+          return { ...d, lastMaterializedDate: newest }
+        })
+        for (const local of localDefs) {
+          if (!driveIds.has(local.id)) merged.push(local)
+        }
         setRecurring(merged)
         saveRecurring(merged)
-        if (merged.length !== driveRecurring.length) {
+        // Push back if we added local-only defs or advanced any materialization flag.
+        const flagAdvanced = merged.some((m, i) =>
+          i < driveRecurring.length && m.lastMaterializedDate !== driveRecurring[i].lastMaterializedDate
+        )
+        if (merged.length !== driveRecurring.length || flagAdvanced) {
           saveRecurringToDrive(token, merged)
         }
       } else {
@@ -290,17 +308,20 @@ export default function Dashboard({ token, onSignOut }) {
       const currentRecurring = loadRecurring()
       const due = getDueToday(currentRecurring)
       if (due.length > 0) {
+        // Mark them materialized SYNCHRONOUSLY (before any await) and persist
+        // to localStorage immediately. JS is single-threaded, so any concurrent
+        // loadTasksAndEvents call that runs after this point reads the updated
+        // flag and skips — preventing the duplicate-materialization storm.
         let updated = currentRecurring
+        for (const def of due) updated = markMaterialized(updated, def.id)
+        saveRecurring(updated)
+        setRecurring(updated)
+        saveRecurringToDrive(token, updated)
+
         for (const def of due) {
           try {
             await createTask(token, { title: def.title, notes: def.notes || undefined })
-            updated = markMaterialized(updated, def.id)
-          } catch { /* don't block if one fails */ }
-        }
-        if (updated !== currentRecurring) {
-          saveRecurring(updated)
-          setRecurring(updated)
-          saveRecurringToDrive(token, updated)
+          } catch { /* don't block if one fails — better a missed quest than a dupe storm */ }
         }
       }
 
