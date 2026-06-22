@@ -16,6 +16,8 @@ const CHARACTER_FILE_NAME = 'questmaster-character.json'
 const CHARACTER_FILE_ID_KEY = 'qm_drive_character_id'
 const RECURRING_FILE_NAME = 'questmaster-recurring.json'
 const RECURRING_FILE_ID_KEY = 'qm_drive_recurring_id'
+const TASKORDER_FILE_NAME = 'questmaster-taskorder.json'
+const TASKORDER_FILE_ID_KEY = 'qm_drive_taskorder_id'
 
 function auth(token) {
   return { Authorization: `Bearer ${token}` }
@@ -721,6 +723,74 @@ export async function saveRecurringToDrive(token, defs) {
         body: multipart,
       })
       if (res.ok) { const data = await res.json(); if (data.id) localStorage.setItem(RECURRING_FILE_ID_KEY, data.id) }
+    }
+  } catch {}
+}
+
+async function getTaskOrderFileId(token) {
+  const params = new URLSearchParams({
+    spaces: 'appDataFolder',
+    q: `name='${TASKORDER_FILE_NAME}'`,
+    fields: 'files(id)',
+    orderBy: 'createdTime',
+  })
+  const res = await fetch(`${DRIVE}/files?${params}`, { headers: auth(token) })
+  if (!res.ok) throw Object.assign(new Error(`Drive list failed: ${res.status}`), { status: res.status })
+  const data = await res.json()
+  const id = data.files?.[0]?.id || null
+  if (id) localStorage.setItem(TASKORDER_FILE_ID_KEY, id)
+  else localStorage.removeItem(TASKORDER_FILE_ID_KEY)
+  return id
+}
+
+// Returns { payload: { order, updatedAt } | null, error }
+export async function loadTaskOrderFromDrive(token) {
+  try {
+    const fileId = await getTaskOrderFileId(token)
+    if (!fileId) return { payload: null, error: null }
+    const res = await fetch(`${DRIVE}/files/${fileId}?alt=media`, { headers: auth(token) })
+    if (res.status === 404) {
+      localStorage.removeItem(TASKORDER_FILE_ID_KEY)
+      return { payload: null, error: null }
+    }
+    if (!res.ok) throw Object.assign(new Error(`Drive read failed: ${res.status}`), { status: res.status })
+    const data = await res.json()
+    if (data && Array.isArray(data.order)) return { payload: data, error: null }
+    return { payload: null, error: null }
+  } catch (e) {
+    const status = e.status
+    if (status === 401 || status === 403) return { payload: null, error: 'scope' }
+    return { payload: null, error: 'network' }
+  }
+}
+
+export async function saveTaskOrderToDrive(token, payload) {
+  try {
+    const body = JSON.stringify(payload)
+    let fileId = await getTaskOrderFileId(token)
+    if (fileId) {
+      const res = await fetch(`${UPLOAD}/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { ...auth(token), 'Content-Type': 'application/json' },
+        body,
+      })
+      if (res.status === 404) {
+        localStorage.removeItem(TASKORDER_FILE_ID_KEY)
+        return saveTaskOrderToDrive(token, payload)
+      }
+    } else {
+      const boundary = 'qm_boundary_009'
+      const metadata = JSON.stringify({ name: TASKORDER_FILE_NAME, parents: ['appDataFolder'] })
+      const multipart = [
+        `--${boundary}`, 'Content-Type: application/json; charset=UTF-8', '', metadata,
+        `--${boundary}`, 'Content-Type: application/json', '', body, `--${boundary}--`,
+      ].join('\r\n')
+      const res = await fetch(`${UPLOAD}/files?uploadType=multipart`, {
+        method: 'POST',
+        headers: { ...auth(token), 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body: multipart,
+      })
+      if (res.ok) { const data = await res.json(); if (data.id) localStorage.setItem(TASKORDER_FILE_ID_KEY, data.id) }
     }
   } catch {}
 }

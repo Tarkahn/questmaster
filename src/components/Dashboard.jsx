@@ -4,8 +4,10 @@ import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
-import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, saveCharacter, loadRecurringFromDrive, saveRecurringToDrive } from '../utils/driveSync'
+import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, saveCharacter, loadRecurringFromDrive, saveRecurringToDrive, loadTaskOrderFromDrive, saveTaskOrderToDrive } from '../utils/driveSync'
 import { loadRecurring, saveRecurring, createRecurringDef, getDueToday, markMaterialized, scheduleLabel } from '../utils/recurring'
+import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, reorderIds } from '../utils/taskOrder'
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
 import { useGameState, computeGameStateMerge } from '../hooks/useGameState'
@@ -35,6 +37,7 @@ const BGM_SRC = '/audio/Medieval%20Vol.%202%206.mp3'
 
 export default function Dashboard({ token, onSignOut }) {
   const [tasks, setTasks] = useState([])
+  const [taskOrder, setTaskOrder] = useState(() => loadTaskOrder()) // { order: [ids], updatedAt }
   const [subtasksByParent, setSubtasksByParent] = useState({})
   const [sideQuestParent, setSideQuestParent] = useState(null) // parent task obj for the Side Quest modal
   const [events, setEvents] = useState([])
@@ -163,6 +166,7 @@ export default function Dashboard({ token, onSignOut }) {
         { state: driveGameState },
         { character: driveCharacter },
         { defs: driveRecurring },
+        { payload: driveTaskOrder },
       ] = await Promise.all([
         loadFromDrive(token),
         loadGlossary(token),
@@ -171,6 +175,7 @@ export default function Dashboard({ token, onSignOut }) {
         loadGameState(token),
         loadCharacter(token),
         loadRecurringFromDrive(token),
+        loadTaskOrderFromDrive(token),
       ])
 
       if (error === 'scope') {
@@ -266,6 +271,21 @@ export default function Dashboard({ token, onSignOut }) {
         // No Drive file yet — upload what we have locally.
         const localDefs = loadRecurring()
         if (localDefs.length > 0) saveRecurringToDrive(token, localDefs)
+      }
+
+      // Task display order — last-write-wins by updatedAt so a stale poll can't
+      // clobber a reorder this device just made.
+      if (driveTaskOrder) {
+        const local = loadTaskOrder()
+        if ((driveTaskOrder.updatedAt || '') > (local.updatedAt || '')) {
+          setTaskOrder(driveTaskOrder)
+          saveTaskOrderRaw(driveTaskOrder)
+        } else if ((local.updatedAt || '') > (driveTaskOrder.updatedAt || '')) {
+          saveTaskOrderToDrive(token, local)
+        }
+      } else {
+        const local = loadTaskOrder()
+        if (local.order.length > 0) saveTaskOrderToDrive(token, local)
       }
     }
 
@@ -499,6 +519,17 @@ export default function Dashboard({ token, onSignOut }) {
 
   function handleOpenSideQuests(taskObj) {
     setSideQuestParent(taskObj)
+  }
+
+  // Drag-to-reorder (undated quests only). `orderedTasks` is the displayed list.
+  function handleDragEnd(result) {
+    const { source, destination } = result
+    if (!destination || destination.index === source.index) return
+    const displayedIds = orderedTasks.map(t => t.id)
+    const newIds = reorderIds(displayedIds, source.index, destination.index)
+    const payload = saveTaskOrder(newIds)   // writes localStorage with fresh updatedAt
+    setTaskOrder(payload)
+    saveTaskOrderToDrive(token, payload)
   }
 
   async function handleCreateSideQuests(parentId, titles) {
@@ -972,6 +1003,9 @@ export default function Dashboard({ token, onSignOut }) {
   const defeatedHabits = habits.filter(h => h.status === 'defeated')
   const canAddHabit = activeHabits.length < 3
 
+  // Display order: undated quests keep their manual slot; dated quests sorted by date.
+  const orderedTasks = computeDisplayOrder(tasks, taskOrder.order)
+
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   })
@@ -1181,27 +1215,54 @@ export default function Dashboard({ token, onSignOut }) {
               </div>
               {tasks.length === 0 && completedTasks.length === 0
                 ? <p className="empty">All quests complete — you're a legend! 🎉</p>
-                : tasks.map(task => (
-                    <TaskItem
-                      key={task.id}
-                      task={task}
-                      themedTitle={themedTitles[task.id]}
-                      difficulty={getEffectiveDifficulty(task.id)}
-                      coinValue={computeCoins(task.id, getEffectiveDifficulty(task.id), taskSeenMap, character.class)}
-                      diceBonus={classDiceBonus(character.class) + getItemDiceBonus(character)}
-                      onComplete={handleComplete}
-                      onDifficultyChange={handleDifficultyChange}
-                      onEdit={() => setEditingTask(task)}
-                      subtasks={subtasksByParent[task.id] || []}
-                      themedTitles={themedTitles}
-                      getEffectiveDifficulty={getEffectiveDifficulty}
-                      taskSeenMap={taskSeenMap}
-                      characterClass={character.class}
-                      onCompleteSubtask={handleCompleteSubtask}
-                      onDeleteSubtask={handleDeleteSubtask}
-                      onAddSideQuests={() => handleOpenSideQuests(task)}
-                    />
-                  ))
+                : (
+                  <DragDropContext onDragEnd={handleDragEnd}>
+                    <Droppable droppableId="quests">
+                      {(dropProvided) => (
+                        <div ref={dropProvided.innerRef} {...dropProvided.droppableProps}>
+                          {orderedTasks.map((task, index) => (
+                            <Draggable
+                              key={task.id}
+                              draggableId={task.id}
+                              index={index}
+                              isDragDisabled={Boolean(task.due)}
+                            >
+                              {(dragProvided, dragSnapshot) => (
+                                <div
+                                  ref={dragProvided.innerRef}
+                                  {...dragProvided.draggableProps}
+                                  className={dragSnapshot.isDragging ? 'task-dragging' : undefined}
+                                >
+                                  <TaskItem
+                                    task={task}
+                                    themedTitle={themedTitles[task.id]}
+                                    difficulty={getEffectiveDifficulty(task.id)}
+                                    coinValue={computeCoins(task.id, getEffectiveDifficulty(task.id), taskSeenMap, character.class)}
+                                    diceBonus={classDiceBonus(character.class) + getItemDiceBonus(character)}
+                                    onComplete={handleComplete}
+                                    onDifficultyChange={handleDifficultyChange}
+                                    onEdit={() => setEditingTask(task)}
+                                    subtasks={subtasksByParent[task.id] || []}
+                                    themedTitles={themedTitles}
+                                    getEffectiveDifficulty={getEffectiveDifficulty}
+                                    taskSeenMap={taskSeenMap}
+                                    characterClass={character.class}
+                                    onCompleteSubtask={handleCompleteSubtask}
+                                    onDeleteSubtask={handleDeleteSubtask}
+                                    onAddSideQuests={() => handleOpenSideQuests(task)}
+                                    dragHandleProps={task.due ? null : dragProvided.dragHandleProps}
+                                    isDated={Boolean(task.due)}
+                                  />
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {dropProvided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  </DragDropContext>
+                )
               }
 
               {completedTasks.length > 0 && (

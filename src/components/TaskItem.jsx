@@ -19,6 +19,8 @@ export default function TaskItem({
   onDeleteSubtask,
   onAddSideQuests,
   onDelete,
+  dragHandleProps,
+  isDated = false,
 }) {
   const [phase, setPhase] = useState('idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
@@ -79,6 +81,14 @@ export default function TaskItem({
   return (
     <div className={`task-block${isSub ? ' task-block--sub' : ''}`}>
       <div className={`task-item${phase === 'done' ? ' task-done' : ''}${isSub ? ' task-item--sub' : ''}`}>
+        {!isSub && dragHandleProps && phase === 'idle' && (
+          <span
+            className="task-drag-handle"
+            {...dragHandleProps}
+            aria-label="Drag to reorder"
+            title="Drag to reorder"
+          >⠿</span>
+        )}
         <div className="d20-wrap">
           <button
             className={`task-d20${phase === 'rolling' ? ' task-d20--rolling' : ''}${phase === 'done' ? ' task-d20--done' : ''}${locked ? ' task-d20--locked' : ''}`}
