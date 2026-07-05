@@ -4,7 +4,7 @@ function last7Days(history) {
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today)
     d.setDate(d.getDate() - i)
-    const dateStr = d.toISOString().slice(0, 10)
+    const dateStr = d.toLocaleDateString('en-CA')
     const entry = history.find(h => h.date === dateStr)
     days.push({
       date: dateStr,

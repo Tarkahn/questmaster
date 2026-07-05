@@ -40,6 +40,13 @@ export const CLASS_ORDER = ['warrior', 'mage', 'rogue', 'cleric', 'ranger']
 
 export const DEFAULT_CHARACTER = {
   class: null,
+  maxHP: 100,
+  currentHP: 100,
+  // Last level through which the 2d10+10 level-up HP bonus has been applied —
+  // NOT the same as the game-state `level` (lifetimeXp-derived); this just
+  // tracks how far the one-time HP rolls have caught up, so a level-up bonus
+  // is never re-rolled. See useCharacter.applyLevelUps.
+  hpLevel: 1,
   ownedItems: [],
   equippedItems: {
     'main-hand': null,

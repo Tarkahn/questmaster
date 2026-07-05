@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { TIER_INFO, cycleTier } from '../utils/difficulty'
 import { playDiceRoll, playDiceLand, playMissionClaim, playCoinEarn } from '../utils/audio'
+import { missionUrgency } from '../utils/urgency'
 
-const REVEAL_MS = 10000
-
-export default function EventItem({ event, themedTitle, claimed, difficulty = 'normal', coinValue = 0, onClaim, onUnclaim, onDifficultyChange, onEdit }) {
+export default function EventItem({ event, themedTitle, claimed, difficulty = 'normal', coinValue = 0, revealMs = 5000, onClaim, onUnclaim, onDifficultyChange, onEdit }) {
   const [phase, setPhase] = useState(claimed ? 'done' : 'idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
   const [earnedXP, setEarnedXP] = useState(null)
@@ -19,6 +18,7 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
 
   const isAllDay = Boolean(event.start?.date && !event.start?.dateTime)
   const tier = TIER_INFO[difficulty] || TIER_INFO.normal
+  const urgency = missionUrgency(event)
   const originalTitle = event.summary || '(No title)'
   const hasThemed = Boolean(themedTitle) && themedTitle !== originalTitle
 
@@ -26,7 +26,7 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
     if (!hasThemed) return
     setRevealing(true)
     clearTimeout(revealTimerRef.current)
-    revealTimerRef.current = setTimeout(() => setRevealing(false), REVEAL_MS)
+    revealTimerRef.current = setTimeout(() => setRevealing(false), revealMs)
   }
 
   function formatTime(dt) {
@@ -74,6 +74,9 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
 
   return (
     <div className={`event-item${phase === 'done' ? ' event-item--done' : ''}`}>
+      <div className="urgency-bar" title={urgency.label}>
+        <div className={`urgency-bar-fill urgency-bar-fill--${urgency.tier}`} style={{ width: `${urgency.pct}%` }} />
+      </div>
       <div className={`rune-outer${phase === 'done' ? ' rune-outer--done' : ''}${phase === 'rolling' ? ' rune-outer--rolling' : ''}`}>
         <button
           className="event-rune"

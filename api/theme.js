@@ -1,4 +1,4 @@
-const BASE_SYSTEM_PROMPT = `You are the official scribe of QuestMaster, a Dungeons & Dragons 5th Edition adventure chronicle. Convert modern tasks and calendar events into authentic D&D language, and classify each item's difficulty.
+const BASE_SYSTEM_PROMPT = `You are the official scribe of QuestMaster, a Dungeons & Dragons 5th Edition adventure chronicle. Convert modern tasks and calendar events into authentic D&D language, classify each item's difficulty, and identify which character stats the activity develops.
 
 TONE: Classic D&D 5e campaign setting — guilds, keeps, taverns, clerics, paladins, rogues, arcane magic, gold pieces, potions. Do NOT use Tolkien language. Do NOT use Game of Thrones language. Strictly D&D adventure style.
 
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { items, glossary } = req.body || {}
+  const { items, glossary, statGlossary } = req.body || {}
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'items must be a non-empty array' })
   }
@@ -30,13 +30,22 @@ export default async function handler(req, res) {
   if (!apiKey) {
     const themes = {}
     const difficulties = {}
-    items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal' })
-    return res.status(200).json({ themes, difficulties })
+    const statWeights = {}
+    items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal'; statWeights[item.id] = {} })
+    return res.status(200).json({ themes, difficulties, statWeights })
   }
 
-  const systemPrompt = glossary
-    ? `${BASE_SYSTEM_PROMPT}\n\nVOCABULARY GLOSSARY (use these exact translations):\n${glossary}`
-    : BASE_SYSTEM_PROMPT
+  let systemPrompt = BASE_SYSTEM_PROMPT
+  if (glossary) {
+    systemPrompt += `\n\nVOCABULARY GLOSSARY (use these exact translations):\n${glossary}`
+  }
+  if (Array.isArray(statGlossary) && statGlossary.length > 0) {
+    const statLines = statGlossary.map(s => `- ${s.id} (${s.name}): ${s.description}`).join('\n')
+    systemPrompt += `\n\nCHARACTER STAT CLASSIFICATION:
+For each item, identify which character stats the activity develops and assign weights (0.0–1.0, weights summing to ≤ 1.0 across all stats for that item).
+Only assign weights for stats that genuinely apply — most tasks only develop 1–2 stats. Return {} for tasks with no clear stat connection (admin, errands, scheduling).
+Available stats:\n${statLines}`
+  }
 
   const numbered = items.map((item, i) => {
     let line = `${i + 1}. ${item.title}`
@@ -63,14 +72,15 @@ export default async function handler(req, res) {
         system: systemPrompt,
         messages: [{
           role: 'user',
-          content: `Convert each item and classify its difficulty. Return ONLY a JSON object with two arrays of the same length:
+          content: `Convert each item, classify its difficulty${Array.isArray(statGlossary) && statGlossary.length > 0 ? ', and identify stat weights' : ''}. Return ONLY a JSON object with arrays of the same length as the input:
 
 ${numbered}
 
 Reply with only this JSON:
 {
   "themes": ["D&D title 1", "D&D title 2", ...],
-  "difficulties": ["normal|hard|legendary", ...]
+  "difficulties": ["normal|hard|legendary", ...],
+  "statWeights": [{"INT": 0.8, "WIS": 0.2}, {}, {"STR": 1.0}, ...]
 }`,
         }],
       }),
@@ -78,21 +88,23 @@ Reply with only this JSON:
   } catch {
     const themes = {}
     const difficulties = {}
-    items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal' })
-    return res.status(200).json({ themes, difficulties })
+    const statWeights = {}
+    items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal'; statWeights[item.id] = {} })
+    return res.status(200).json({ themes, difficulties, statWeights })
   }
 
   if (!anthropicRes.ok) {
     const themes = {}
     const difficulties = {}
-    items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal' })
-    return res.status(200).json({ themes, difficulties })
+    const statWeights = {}
+    items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal'; statWeights[item.id] = {} })
+    return res.status(200).json({ themes, difficulties, statWeights })
   }
 
   const data = await anthropicRes.json()
   const text = data.content?.[0]?.text?.trim() || '{}'
 
-  let parsed = { themes: [], difficulties: [] }
+  let parsed = { themes: [], difficulties: [], statWeights: [] }
   try {
     const match = text.match(/\{[\s\S]*\}/)
     if (match) parsed = JSON.parse(match[0])
@@ -100,11 +112,14 @@ Reply with only this JSON:
 
   const themes = {}
   const difficulties = {}
+  const statWeights = {}
   items.forEach((item, i) => {
     themes[item.id] = (parsed.themes?.[i] && parsed.themes[i].trim()) || item.title
     const d = parsed.difficulties?.[i]
     difficulties[item.id] = ['normal', 'hard', 'legendary'].includes(d) ? d : 'normal'
+    const w = parsed.statWeights?.[i]
+    statWeights[item.id] = (w && typeof w === 'object') ? w : {}
   })
 
-  return res.status(200).json({ themes, difficulties })
+  return res.status(200).json({ themes, difficulties, statWeights })
 }

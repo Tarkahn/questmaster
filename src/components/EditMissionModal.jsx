@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import DatePicker from './DatePicker'
 import TimePicker from './TimePicker'
+import { REMINDER_OPTIONS } from '../utils/api'
+
+// Google returns { useDefault: true } | { useDefault: false, overrides: [{method, minutes}] }
+function initialReminderMinutes(event, fallback) {
+  if (!event.reminders) return fallback
+  if (event.reminders.useDefault) return 'default'
+  const override = event.reminders.overrides?.find(o => o.method === 'popup') || event.reminders.overrides?.[0]
+  return override ? override.minutes : fallback
+}
 
 function addHour(hhmm) {
   const [h, m] = hhmm.split(':').map(Number)
@@ -19,7 +28,7 @@ function localTime(dt) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-export default function EditMissionModal({ event, onClose, onSave, onDelete }) {
+export default function EditMissionModal({ event, onClose, onSave, onDelete, defaultReminderMinutes = 30 }) {
   const isAllDay = Boolean(event.start?.date && !event.start?.dateTime)
 
   const [title, setTitle] = useState(event.summary || '')
@@ -29,6 +38,7 @@ export default function EditMissionModal({ event, onClose, onSave, onDelete }) {
   const [start, setStart] = useState(isAllDay ? '09:00' : localTime(event.start?.dateTime))
   const [end, setEnd] = useState(isAllDay ? '10:00' : localTime(event.end?.dateTime))
   const [allDay, setAllDay] = useState(isAllDay)
+  const [reminderMinutes, setReminderMinutes] = useState(initialReminderMinutes(event, defaultReminderMinutes))
   const [notes, setNotes] = useState(event.description || '')
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -56,6 +66,7 @@ export default function EditMissionModal({ event, onClose, onSave, onDelete }) {
         start: allDay ? undefined : start,
         end: allDay ? undefined : end,
         allDay,
+        reminderMinutes: allDay ? undefined : reminderMinutes,
         notes: notes.trim() || undefined,
       })
     } catch (err) {
@@ -117,6 +128,19 @@ export default function EditMissionModal({ event, onClose, onSave, onDelete }) {
                 End
                 <TimePicker value={end} onChange={setEnd} />
               </div>
+              <label className="form-label">
+                🔔 Reminder
+                <select
+                  className="form-input"
+                  value={reminderMinutes}
+                  onChange={e => setReminderMinutes(e.target.value === 'default' ? 'default' : Number(e.target.value))}
+                >
+                  <option value="default">Calendar default</option>
+                  {REMINDER_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
             </>
           )}
 

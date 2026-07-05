@@ -1,16 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchTodaysTasks, fetchUpcomingEvents, markTaskComplete, markTaskIncomplete, createTask, createSubtask, createEvent, deleteTask, updateTask, deleteEvent, updateEvent } from '../utils/api'
+import { fetchTodaysTasks, fetchUpcomingEvents, markTaskComplete, markTaskIncomplete, createTask, createSubtask, createEvent, deleteTask, updateTask, updateTaskChecklist, deleteEvent, updateEvent, buildCompanionEvent, formatQuestTime, moveSubtask, parseQuestTime, parseQuestReminder, parseChecklist, stripAuxTags, dueDateOnly } from '../utils/api'
 import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
-import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, saveCharacter, loadRecurringFromDrive, saveRecurringToDrive, loadTaskOrderFromDrive, saveTaskOrderToDrive } from '../utils/driveSync'
-import { loadRecurring, saveRecurring, createRecurringDef, getDueToday, markMaterialized, scheduleLabel } from '../utils/recurring'
-import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, reorderIds } from '../utils/taskOrder'
+import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, loadRecurringFromDrive, saveRecurringToDrive, loadTaskOrderFromDrive, saveTaskOrderToDrive, loadStats, loadLocations, loadPenaltyLedger, savePenaltyLedger } from '../utils/driveSync'
+import { loadLedger, saveLedger, recordMissions, resolveMission, runPenaltyPass, dueChangePenalty, mergeLedgers, recurringMissPenalty } from '../utils/penalties'
+import { loadRecurring, loadRecurringMeta, saveRecurring, saveRecurringRaw, createRecurringDef, getDueToday, markMaterialized, scheduleLabel, setLastTaskId, recordCompletion, recordMiss } from '../utils/recurring'
+import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, computeAutoSortOrder, reorderIds } from '../utils/taskOrder'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
 import { useGameState, computeGameStateMerge } from '../hooks/useGameState'
+import { useStats } from '../hooks/useStats'
+import { useCharacter } from '../hooks/useCharacter'
+import { useLocations } from '../hooks/useLocations'
+import { readJson, writeJson, readNum } from '../utils/storage'
 import TaskItem from './TaskItem'
 import EventItem from './EventItem'
 import BossCard from './BossCard'
@@ -19,18 +24,25 @@ import CreateQuestModal from './CreateQuestModal'
 import CreateMissionModal from './CreateMissionModal'
 import SideQuestModal from './SideQuestModal'
 import EditQuestModal from './EditQuestModal'
+import ChecklistModal from './ChecklistModal'
 import EditMissionModal from './EditMissionModal'
 import GlossaryModal from './GlossaryModal'
 import SettingsModal from './SettingsModal'
+import StatEditorModal from './StatEditorModal'
+import StatDetailModal from './StatDetailModal'
+import InventoryModal from './InventoryModal'
+import HelpModal, { HelpButton } from './HelpModal'
 import Chronicle from './Chronicle'
 import CharacterSelectModal from './CharacterSelectModal'
 import CharacterView from './CharacterView'
 import BossJournalModal from './BossJournalModal'
 import ShopView from './ShopView'
+import WorldMap from './WorldMap'
 import SplashScreen from './SplashScreen'
+import PenaltyReportModal from './PenaltyReportModal'
 import Toast from './Toast'
-import { CLASSES, DEFAULT_CHARACTER, classDiceBonus, applyXpPerk, applyRangerMissionBonus } from '../utils/character'
-import { ITEMS, getItemDiceBonus, getPhilosopherBonus, getTomeBonus, getItemMissionBonus, isItemForClass, migrateEquippedItems } from '../utils/items'
+import { CLASSES, classDiceBonus, applyXpPerk, applyRangerMissionBonus } from '../utils/character'
+import { ITEMS, getItemDiceBonus, getPhilosopherBonus, getTomeBonus, getItemMissionBonus } from '../utils/items'
 import { setSfxVolume, playLevelUp, playBossStrike, playBossDefeat } from '../utils/audio'
 
 const BGM_SRC = '/audio/Medieval%20Vol.%202%206.mp3'
@@ -95,15 +107,32 @@ export default function Dashboard({ token, onSignOut }) {
   const [showCreateQuest, setShowCreateQuest] = useState(false)
   const [showCreateMission, setShowCreateMission] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
+  const [checklistTask, setChecklistTask] = useState(null)
+  const [editingSubtask, setEditingSubtask] = useState(null) // { sub, parentId }
   const [editingEvent, setEditingEvent] = useState(null)
-  const [taskSeenMap, setTaskSeenMap] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('qm_task_seen') || '{}') } catch { return {} }
-  })
-  const [character, setCharacter] = useState(DEFAULT_CHARACTER)
+  const [taskSeenMap, setTaskSeenMap] = useState(() => readJson('qm_task_seen', {}))
+  const [penaltyReport, setPenaltyReport] = useState(null)
+  const penaltyLedgerRef = useRef(loadLedger())
+  const penaltyRunningRef = useRef(false)
+  const levelUpRunningRef = useRef(false)
+  // True once syncFromDrive has completed successfully at least once this
+  // session. Recurring-quest materialization gates on this — see the bug fix
+  // note at its usage below: loadTasksAndEvents reads recurring defs from
+  // local storage synchronously on mount, which can race ahead of the Drive
+  // fetch that would have carried a completion made on another device,
+  // causing an already-completed recurring quest to be wrongly flagged
+  // missed (deleted + penalized) before the real data arrives.
+  const driveSyncedRef = useRef(false)
+  const creatingMissionRef = useRef(false)
+  const creatingQuestRef = useRef(false)
+  const materializingRecurringRef = useRef(false)
+  const { character, commitCharacter, mergeFromDrive: mergeCharacter,
+          selectClass, equipItem, unequipItem, damagePlayer, applyLevelUps } = useCharacter(token)
   const [showCharacterSelect, setShowCharacterSelect] = useState(false)
   const [showBossJournal, setShowBossJournal] = useState(false)
   const [recurring, setRecurring] = useState(() => loadRecurring())
   const [showRecurringList, setShowRecurringList] = useState(false)
+  const [showCompletedList, setShowCompletedList] = useState(false)
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
   const [showSettings, setShowSettings] = useState(false)
@@ -111,28 +140,40 @@ export default function Dashboard({ token, onSignOut }) {
   const [difficultyMemory, setDifficultyMemory] = useState(() => loadDifficultyMemory())
   const [suggestedDifficulties, setSuggestedDifficulties] = useState({})
   const [syncStatus, setSyncStatus] = useState('checking') // checking | ok | scope | network
-  const [view, setView] = useState('quests') // quests | chronicle | character | shop
+  const [view, setView] = useState('quests') // quests | chronicle | character | shop | map
+  const [showMenu, setShowMenu] = useState(false)
   const [shopStartCategory, setShopStartCategory] = useState('weapon')
   const [showSplash, setShowSplash] = useState(true)
+  const { stats, earnStatXP, saveStat, deleteStat, mergeFromDrive: mergeStats } = useStats(token)
+  const { locations, addPin, removePin, mergeFromDrive: mergeLocations } = useLocations(token)
+  const [statWeightsMap, setStatWeightsMap] = useState({})
+  const [showStatEditor, setShowStatEditor] = useState(false)
+  const [editingStat, setEditingStat] = useState(null)
+  const [showStatDetail, setShowStatDetail] = useState(false)
+  const [detailStat, setDetailStat] = useState(null)
+  const [showInventory, setShowInventory] = useState(false)
+  const [helpTopic, setHelpTopic] = useState(null)
 
   const {
     points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, completedToday,
     level, xpInto, xpNeeded, xpPct,
-    claimedEvents, completeTask, uncompleteTask, earnCoins, spendCoins,
+    claimedEvents, completeTask, uncompleteTask, deductXP, earnCoins, spendCoins,
     removeCoins, claimEvent, unclaimEvent,
     history, resetStats, applyGameState,
   } = useGameState()
   const [xpDoubleActive, setXpDoubleActive] = useState(false)
   const [completedTasks, setCompletedTasks] = useState(() => {
-    try {
-      const raw = localStorage.getItem('qm_completed_today')
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      const today = new Date().toISOString().slice(0, 10)
-      return parsed.date === today ? (parsed.entries || []) : []
-    } catch { return [] }
+    const parsed = readJson('qm_completed_today', null)
+    if (!parsed) return []
+    const today = new Date().toLocaleDateString('en-CA')
+    return parsed.date === today ? (parsed.entries || []) : []
   })
+  const menuRef = useRef(null)
+  const headerRef = useRef(null)
   const bgmRef = useRef(null)
+  const bgmCtxRef = useRef(null)   // AudioContext for iOS-compatible volume
+  const bgmGainRef = useRef(null)  // GainNode — audio.volume is read-only on iOS
+  const bgmVolumeRef = useRef(settings.musicVolume ?? 0.3)
   const prevLevelRef = useRef(null)
   const gameStateRef = useRef({ points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history })
   useEffect(() => {
@@ -140,40 +181,104 @@ export default function Dashboard({ token, onSignOut }) {
   })
   const handleSignOut = useCallback(onSignOut, [onSignOut])
 
+  // Measure the sticky header's real height and expose it as a CSS variable so
+  // the map (and any full-height view) can subtract the EXACT header height
+  // rather than a hardcoded guess. Handles Dynamic Island insets, HP bars and
+  // the streak banner appearing/disappearing across devices.
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const setVar = () =>
+      document.documentElement.style.setProperty('--header-h', `${el.offsetHeight}px`)
+    setVar()
+    const ro = new ResizeObserver(setVar)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Sound cue only — the toast text (now including the HP gain) is owned by
+  // the durable, hpLevel-gated effect near runPenaltySweep below, so a level-
+  // up produces exactly one toast, not two racing to set the same state.
   useEffect(() => {
     if (prevLevelRef.current !== null && level > prevLevelRef.current) {
       playLevelUp()
-      setToast(`🎉 LEVEL UP! You are now Level ${level}!`)
     }
     prevLevelRef.current = level
   }, [level])
 
   useEffect(() => { setSfxVolume(settings.sfxVolume ?? 0.7) }, [settings.sfxVolume])
 
-  // Start BGM immediately. iOS allows muted autoplay — start muted then unmute.
-  // If even that is blocked, fall back to first interaction.
+  // BGM with iOS-compatible volume via Web Audio GainNode.
+  // iOS makes audio.volume read-only — changes are silently ignored.
+  // Routing through a GainNode processes the signal before it reaches
+  // the hardware, which iOS cannot intercept.
   useEffect(() => {
     const audio = bgmRef.current
     if (!audio) return
-    audio.volume = settings.musicVolume ?? 0.3
-    audio.muted = true
-    audio.play()
-      .then(() => { audio.muted = false })
-      .catch(() => {
-        audio.muted = false
-        const onInteraction = () => {
-          audio.play().catch(() => {})
-          document.removeEventListener('click', onInteraction)
-          document.removeEventListener('touchstart', onInteraction)
-        }
-        document.addEventListener('click', onInteraction)
-        document.addEventListener('touchstart', onInteraction)
-      })
+
+    function initWebAudio() {
+      if (bgmCtxRef.current) return
+      try {
+        const ac = new (window.AudioContext || window.webkitAudioContext)()
+        const src = ac.createMediaElementSource(audio)
+        const gain = ac.createGain()
+        gain.gain.value = bgmVolumeRef.current
+        src.connect(gain)
+        gain.connect(ac.destination)
+        bgmCtxRef.current = ac
+        bgmGainRef.current = gain
+      } catch {}
+    }
+
+    // Resume-only on visibility (reverted 2026-07-05 from a destructive
+    // close-and-rebuild attempt — that version tried to call
+    // createMediaElementSource() again on the SAME <audio> element, which the
+    // Web Audio spec only ever allows ONCE per element, for its whole
+    // lifetime. That threw (caught silently), left bgmGainRef null forever
+    // after the first backgrounding, permanently muting the element (its only
+    // path to the speakers was the now-closed graph) and breaking the volume
+    // slider — matching reports of needing to log out/in to restore sound,
+    // and the volume control working only "occasionally." A suspended
+    // context, by contrast, is always safe to resume without touching the
+    // element/graph at all, so that's the one thing done here.
+    function onVisible() {
+      if (document.visibilityState === 'visible' && bgmCtxRef.current?.state === 'suspended') {
+        bgmCtxRef.current.resume()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    // Non-iOS: try immediately (desktop browsers allow this)
+    initWebAudio()
+    audio.play().catch(() => {})
+
+    // iOS: capture-phase ensures we're in the synchronous gesture context
+    // iOS requires for audio.play() permission
+    function unlock() {
+      if (!audio.paused) { cleanup(); return }
+      initWebAudio()
+      if (bgmCtxRef.current?.state === 'suspended') bgmCtxRef.current.resume()
+      audio.play().then(cleanup).catch(() => {})
+    }
+    function cleanup() {
+      document.removeEventListener('touchstart', unlock, true)
+      document.removeEventListener('touchend',   unlock, true)
+      document.removeEventListener('click',      unlock, true)
+    }
+    document.addEventListener('touchstart', unlock, true)
+    document.addEventListener('touchend',   unlock, true)
+    document.addEventListener('click',      unlock, true)
+    return () => {
+      cleanup()
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
-  // Keep music volume in sync with settings without restarting the track
+  // Volume sync: update GainNode (works on iOS); audio.volume is a no-op there
   useEffect(() => {
-    if (bgmRef.current) bgmRef.current.volume = settings.musicVolume ?? 0.3
+    const v = settings.musicVolume ?? 0.3
+    bgmVolumeRef.current = v
+    if (bgmGainRef.current) bgmGainRef.current.gain.value = v
   }, [settings.musicVolume])
 
   // One-time theme cache sync on mount: merge Drive cache into local so both
@@ -209,8 +314,11 @@ export default function Dashboard({ token, onSignOut }) {
         { settings: driveSettings },
         { state: driveGameState },
         { character: driveCharacter },
-        { defs: driveRecurring },
+        { payload: driveRecurring },
         { payload: driveTaskOrder },
+        { stats: driveStats, history: driveStatHistory },
+        { locations: driveLocations },
+        { ledger: driveLedger },
       ] = await Promise.all([
         loadFromDrive(token),
         loadGlossary(token),
@@ -220,6 +328,9 @@ export default function Dashboard({ token, onSignOut }) {
         loadCharacter(token),
         loadRecurringFromDrive(token),
         loadTaskOrderFromDrive(token),
+        loadStats(token),
+        loadLocations(token),
+        loadPenaltyLedger(token),
       ])
 
       if (error === 'scope') {
@@ -271,50 +382,40 @@ export default function Dashboard({ token, onSignOut }) {
       }
 
       if (driveCharacter) {
-        // Migrate old 4-slot equippedItems to new 11-slot shape on load
-        const migratedEquipped = 'weapon' in (driveCharacter.equippedItems || {})
-          ? migrateEquippedItems(driveCharacter.equippedItems)
-          : driveCharacter.equippedItems
-        const migratedChar = { ...driveCharacter, equippedItems: migratedEquipped }
-        setCharacter(prev => ({ ...DEFAULT_CHARACTER, ...prev, ...migratedChar }))
+        mergeCharacter(driveCharacter)
         if (!driveCharacter.class) setShowCharacterSelect(true)
       } else {
         // First launch — show class selection
         setShowCharacterSelect(true)
       }
 
-      if (driveRecurring !== null) {
-        // Union merge: Drive is source of truth for a def's content (title/days/
-        // active), but lastMaterializedDate takes the MOST RECENT of the two.
-        // Otherwise a stale Drive copy (flag still null/yesterday) would clobber
-        // the local "materialized today" flag and trigger re-materialization —
-        // the cause of duplicate-quest storms.
-        const localDefs = loadRecurring()
-        const localById = new Map(localDefs.map(d => [d.id, d]))
-        const driveIds = new Set(driveRecurring.map(d => d.id))
-        const merged = driveRecurring.map(d => {
-          const local = localById.get(d.id)
-          if (!local) return d
-          const newest = [d.lastMaterializedDate, local.lastMaterializedDate]
-            .filter(Boolean).sort().pop() || null
-          return { ...d, lastMaterializedDate: newest }
-        })
-        for (const local of localDefs) {
-          if (!driveIds.has(local.id)) merged.push(local)
-        }
-        setRecurring(merged)
-        saveRecurring(merged)
-        // Push back if we added local-only defs or advanced any materialization flag.
-        const flagAdvanced = merged.some((m, i) =>
-          i < driveRecurring.length && m.lastMaterializedDate !== driveRecurring[i].lastMaterializedDate
-        )
-        if (merged.length !== driveRecurring.length || flagAdvanced) {
-          saveRecurringToDrive(token, merged)
-        }
-      } else {
+      // Whole-array last-write-wins by updatedAt — NOT a per-field merge. A
+      // per-field merge (old approach) took Drive's copy of every field except
+      // lastMaterializedDate, so a stale Drive read could resurrect a def the
+      // user just deleted, or clobber a fresh lastTaskId/lastCompletedDate with
+      // an older Drive value (breaking completion tracking and causing
+      // already-completed quests to get flagged missed / re-materialized).
+      const localRecurring = loadRecurringMeta()
+      if (driveRecurring !== null && (driveRecurring.updatedAt || '') > (localRecurring.updatedAt || '')) {
+        setRecurring(driveRecurring.defs)
+        saveRecurringRaw(driveRecurring)
+      } else if ((localRecurring.updatedAt || '') > (driveRecurring?.updatedAt || '')) {
+        saveRecurringToDrive(token, localRecurring)
+      } else if (driveRecurring === null && localRecurring.defs.length > 0) {
         // No Drive file yet — upload what we have locally.
-        const localDefs = loadRecurring()
-        if (localDefs.length > 0) saveRecurringToDrive(token, localDefs)
+        saveRecurringToDrive(token, localRecurring)
+      }
+
+      // Stats + contribution history — reconciled in the useStats hook.
+      mergeStats(driveStats, driveStatHistory)
+      mergeLocations(driveLocations)
+
+      // Penalty ledger — keep the latest sweep date so a toll done on another
+      // device today isn't repeated here. Merge happens in-ref (no React state).
+      if (driveLedger) {
+        const merged = mergeLedgers(penaltyLedgerRef.current, driveLedger)
+        penaltyLedgerRef.current = merged
+        saveLedger(merged)
       }
 
       // Task display order — last-write-wins by updatedAt so a stale poll can't
@@ -330,6 +431,14 @@ export default function Dashboard({ token, onSignOut }) {
       } else {
         const local = loadTaskOrder()
         if (local.order.length > 0) saveTaskOrderToDrive(token, local)
+      }
+
+      // First successful sync this session — recurring-quest materialization
+      // was gated on this (see loadTasksAndEvents). If it already ran and
+      // skipped materialization while waiting, retry now with fresh data.
+      if (!driveSyncedRef.current) {
+        driveSyncedRef.current = true
+        loadTasksAndEvents()
       }
     }
 
@@ -365,34 +474,197 @@ export default function Dashboard({ token, onSignOut }) {
     }
   }, [points])
 
+  useEffect(() => {
+    if (!showMenu) return
+    function handleClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showMenu])
+
+  // Record visible missions, roll the day's toll once, apply XP/HP, and surface
+  // the report. Guarded against re-entry (load fires on mount, focus, every 15s).
+  async function runPenaltySweep(currentTasks, currentSubtasks, currentEvents) {
+    // No penalties until the player has a character (also dodges the brief
+    // pre-Drive-merge window where HP/gear aren't loaded yet).
+    if (!character?.class || penaltyRunningRef.current) return
+    penaltyRunningRef.current = true
+    try {
+      const prev = penaltyLedgerRef.current
+      const withMissions = recordMissions(prev, currentEvents)
+      const result = runPenaltyPass({
+        tasks: currentTasks,
+        subtasks: currentSubtasks,
+        habits: loadHabits(),
+        character,
+        settings,
+        ledger: withMissions,
+        points,
+        difficultyMemory,
+      })
+      const ledger = result.ledger
+      const ledgerChanged = JSON.stringify(prev) !== JSON.stringify(ledger)
+      penaltyLedgerRef.current = ledger
+      if (ledgerChanged) {
+        saveLedger(ledger)
+        savePenaltyLedger(token, ledger)
+      }
+
+      if (result.xpLost > 0) deductXP(result.xpLost)
+      let died = false
+      if (result.hpLost > 0) died = await damagePlayer(result.hpLost)
+      if (result.hpLost > 0 || result.xpLost > 0) {
+        setPenaltyReport({ ...result, died })
+      }
+    } finally {
+      penaltyRunningRef.current = false
+    }
+  }
+
+  // Level-based max HP growth: whenever the lifetimeXp-derived `level` moves
+  // past character.hpLevel (the last level its HP bonus was applied for),
+  // roll 2d10+10 per level gained and add it to both max and current HP.
+  // Gated on driveSyncedRef for the same reason as recurring-quest
+  // materialization above — a stale, not-yet-merged character.hpLevel could
+  // otherwise double-roll a level-up already applied on another device.
+  useEffect(() => {
+    if (!character?.class || !driveSyncedRef.current || levelUpRunningRef.current) return
+    const fromLevel = character.hpLevel || 1
+    if (level <= fromLevel) return
+    levelUpRunningRef.current = true
+    applyLevelUps(level)
+      .then(result => {
+        if (!result) return
+        const range = result.levelsGained > 1 ? `${result.fromLevel + 1}–${result.newLevel}` : `${result.newLevel}`
+        setToast(`🎉 LEVEL UP! You are now Level ${range}! +${result.hpGained} Max HP (now ${result.newMaxHP})`)
+      })
+      .finally(() => { levelUpRunningRef.current = false })
+  }, [level, character?.class, character?.hpLevel])
+
   const loadTasksAndEvents = useCallback(async () => {
     try {
       // Materialize recurring quests that are due today before fetching tasks
       // so they appear in the list without needing a second load.
       const currentRecurring = loadRecurring()
       const due = getDueToday(currentRecurring)
-      if (due.length > 0) {
+      // Guarded against re-entry: loadTasksAndEvents can be invoked again
+      // (by another effect run, a Drive-sync-driven re-render, or a caller
+      // elsewhere in this file) before this materialization pass finishes —
+      // without this guard that reentrant call re-reads the same
+      // not-yet-materialized `currentRecurring` snapshot and double-materializes
+      // (the same class of bug as creatingQuestRef/creatingMissionRef above).
+      //
+      // Also gated on driveSyncedRef (bug fixed 2026-07-05): loadRecurring()
+      // reads purely local storage. On a device whose local copy predates a
+      // completion made on another device, this used to run BEFORE the Drive
+      // fetch could deliver the real state, wrongly judging an
+      // already-completed recurring quest as missed — deleting the completed
+      // task, creating a duplicate, and charging an XP penalty for a miss
+      // that never happened. Once getDueToday marks a def materialized for
+      // today it won't retry, so the later-arriving correct data couldn't
+      // undo it. Now this waits for the first Drive sync to land; syncFromDrive
+      // retries this call once that happens.
+      if (due.length > 0 && !materializingRecurringRef.current && driveSyncedRef.current) {
+        materializingRecurringRef.current = true
+        try {
         // Mark them materialized SYNCHRONOUSLY (before any await) and persist
         // to localStorage immediately. JS is single-threaded, so any concurrent
         // loadTasksAndEvents call that runs after this point reads the updated
         // flag and skips — preventing the duplicate-materialization storm.
         let updated = currentRecurring
         for (const def of due) updated = markMaterialized(updated, def.id)
-        saveRecurring(updated)
         setRecurring(updated)
-        saveRecurringToDrive(token, updated)
+        saveRecurringToDrive(token, saveRecurring(updated))
 
+        const missedTitles = []
         for (const def of due) {
+          // def still has pre-mark values since due was built from currentRecurring
+          const prevMaterialized = def.lastMaterializedDate
+          const prevCompleted = def.lastCompletedDate || null
+          const wasMissed = prevMaterialized !== null
+            && def.lastTaskId
+            && (prevCompleted === null || prevCompleted < prevMaterialized)
           try {
-            await createTask(token, { title: def.title, notes: def.notes || undefined })
+            if (wasMissed) {
+              try { await deleteTask(token, def.lastTaskId) } catch {}
+              updated = recordMiss(updated, def.id)
+              missedTitles.push(def.title)
+            }
+            const todayDate = new Date().toLocaleDateString('en-CA')
+            const newTask = await createTask(token, { title: def.title, dueTime: def.dueTime || undefined, notes: def.notes || undefined, reminderMinutes: def.reminderMinutes ?? undefined })
+            updated = setLastTaskId(updated, def.id, newTask?.id || null)
+            if (def.dueTime) {
+              try { await createEvent(token, buildCompanionEvent(def.title, todayDate, def.dueTime, def.reminderMinutes ?? settings.defaultReminderMinutes)) } catch {}
+            }
           } catch { /* don't block if one fails — better a missed quest than a dupe storm */ }
+        }
+        // Persist final state (with new lastTaskIds and miss records)
+        setRecurring(updated)
+        saveRecurringToDrive(token, saveRecurring(updated))
+        // Apply dice XP penalty for missed recurring quests and optionally toast.
+        if (missedTitles.length > 0) {
+          const penalty = recurringMissPenalty({
+            count: missedTitles.length,
+            hardMode: settings.hardMode,
+            character,
+          })
+          if (penalty > 0) deductXP(penalty)
+          if (settings.showMissedQuestSummary ?? true) {
+            const listed = missedTitles.map(t => `"${t}"`).join(', ')
+            setToast(`⚠️ Missed: ${listed} — −${penalty} XP penalty`)
+          }
+        }
+        } finally {
+          materializingRecurringRef.current = false
         }
       }
 
-      const [{ tasks: t, subtasksByParent: subs }, e] = await Promise.all([
+      const crystalEquipped = Object.values(character?.equippedItems || {}).includes('crystal-ball')
+      const fetchLookAhead = crystalEquipped ? Math.max(3, settings.missionLookAhead || 0) : (settings.missionLookAhead || 0)
+      const [{ tasks: rawT, subtasksByParent: subs }, e] = await Promise.all([
         fetchTodaysTasks(token),
-        fetchUpcomingEvents(token, settings.missionLookAhead || 0),
+        fetchUpcomingEvents(token, fetchLookAhead),
       ])
+
+      // Dedup: if multiple tasks share a title with a recurring def, keep the newest,
+      // delete the rest. This handles the migration window when lastTaskId was newly
+      // introduced (existing defs had null, so stale cleanup couldn't fire).
+      let t = rawT
+      {
+        const latestRecurring = loadRecurring()
+        const recurringTitleMap = new Map(
+          latestRecurring
+            .filter(d => d.title)
+            .map(d => [d.title.toLowerCase(), d])
+        )
+        const grouped = new Map()
+        for (const task of rawT) {
+          const key = (task.title || '').toLowerCase()
+          if (!recurringTitleMap.has(key)) continue
+          if (!grouped.has(key)) grouped.set(key, [])
+          grouped.get(key).push(task)
+        }
+        const staleIds = new Set()
+        let dedupedRecurring = latestRecurring
+        for (const [key, dupes] of grouped) {
+          if (dupes.length <= 1) continue
+          const sorted = [...dupes].sort((a, b) => (b.updated || '').localeCompare(a.updated || ''))
+          const keeper = sorted[0]
+          for (const stale of sorted.slice(1)) {
+            staleIds.add(stale.id)
+            try { await deleteTask(token, stale.id) } catch {}
+          }
+          const def = recurringTitleMap.get(key)
+          if (def) dedupedRecurring = setLastTaskId(dedupedRecurring, def.id, keeper.id)
+        }
+        if (staleIds.size > 0) {
+          t = rawT.filter(task => !staleIds.has(task.id))
+          setRecurring(dedupedRecurring)
+          saveRecurringToDrive(token, saveRecurring(dedupedRecurring))
+        }
+      }
+
       setTasks(t)
       setSubtasksByParent(subs)
       setEvents(e)
@@ -400,30 +672,38 @@ export default function Dashboard({ token, onSignOut }) {
       const allSubtasks = Object.values(subs).flat()
 
       // Record the first time each task is seen so coin decay can be computed.
-      const today = new Date().toISOString().slice(0, 10)
-      const seen = (() => {
-        try { return JSON.parse(localStorage.getItem('qm_task_seen') || '{}') } catch { return {} }
-      })()
+      const today = new Date().toLocaleDateString('en-CA')
+      const seen = readJson('qm_task_seen', {})
       let changed = false
       for (const task of [...t, ...allSubtasks]) {
         if (!seen[task.id]) { seen[task.id] = today; changed = true }
       }
-      if (changed) localStorage.setItem('qm_task_seen', JSON.stringify(seen))
+      if (changed) writeJson('qm_task_seen', seen)
       setTaskSeenMap({ ...seen })
       setLoading(false)
 
+      // Passive penalty sweep — the day's "toll" + any missions that have passed.
+      runPenaltySweep(t, allSubtasks, e)
+
       const includeNotes = settings.sendNotesToLlm
       const currentRecurringDefs = loadRecurring()
+      // A recurring quest materializes a brand-new Google Task id every day it
+      // recurs, so theme by the stable def id instead — otherwise the exact
+      // same title gets re-sent to Haiku every morning it comes back around.
+      const defIdByTaskId = new Map(
+        currentRecurringDefs.filter(d => d.lastTaskId).map(d => [d.lastTaskId, d.id])
+      )
       const allItems = [
         ...t.map(task => ({
           id: task.id,
+          cacheKey: defIdByTaskId.get(task.id),
           title: task.title,
-          notes: includeNotes ? task.notes : undefined,
+          notes: includeNotes ? stripAuxTags(task.notes) || undefined : undefined,
         })),
         ...allSubtasks.map(task => ({
           id: task.id,
           title: task.title,
-          notes: includeNotes ? task.notes : undefined,
+          notes: includeNotes ? stripAuxTags(task.notes) || undefined : undefined,
         })),
         ...e.map(event => ({
           id: event.id,
@@ -435,9 +715,10 @@ export default function Dashboard({ token, onSignOut }) {
 
       if (allItems.length > 0) {
         setTheming(true)
-        const { themes, suggestedDifficulties: suggested } = await themeItems(allItems, glossary)
+        const { themes, suggestedDifficulties: suggested, statWeights } = await themeItems(allItems, glossary, stats)
         setThemedTitles(themes)
         setSuggestedDifficulties(suggested)
+        setStatWeightsMap(prev => ({ ...prev, ...statWeights }))
         setTheming(false)
       }
     } catch (err) {
@@ -448,7 +729,7 @@ export default function Dashboard({ token, onSignOut }) {
         setError(err.message)
       }
     }
-  }, [token, glossary, settings.sendNotesToLlm, settings.missionLookAhead, handleSignOut])
+  }, [token, glossary, settings.sendNotesToLlm, settings.missionLookAhead, character?.equippedItems, handleSignOut])
 
   useEffect(() => { loadTasksAndEvents() }, [loadTasksAndEvents])
 
@@ -463,6 +744,20 @@ export default function Dashboard({ token, onSignOut }) {
       .then(({ themes }) => setThemedTitles(prev => ({ ...prev, ...themes })))
       .catch(() => {})
   }, [recurring]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // earnStatXP / saveStat / deleteStat live in useStats. These thin wrappers keep
+  // the editor-modal UI state (which Dashboard owns) in sync.
+  function handleSaveStat(updatedStat) {
+    saveStat(updatedStat)
+    setShowStatEditor(false)
+    setEditingStat(null)
+  }
+
+  function handleDeleteStat(statId) {
+    deleteStat(statId)
+    setShowStatEditor(false)
+    setEditingStat(null)
+  }
 
   // Shared reward pipeline used by both top-level quests and side quests.
   // Caller is responsible for optimistically removing the task from its list
@@ -485,13 +780,13 @@ export default function Dashboard({ token, onSignOut }) {
     if (fortuned) finalCoins *= 2
     finalCoins += getPhilosopherBonus(character, finalXP)
 
-    // Boss HP restore: any equipped item with bossHealPerQuest property
+    // Boss damage: equipped Cleric items deal bonus damage to the active boss per quest
     const bossHealAmount = eqIds.reduce((sum, id) => sum + (ITEMS[id]?.bossHealPerQuest || 0), 0)
     if (bossHealAmount > 0) {
       const target = habits.find(h => h.status === 'active')
-      if (target && target.boss.currentHP < target.boss.maxHP) {
+      if (target && target.boss.currentHP > 0) {
         const updatedHabits = habits.map(h =>
-          h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: Math.min(h.boss.maxHP, h.boss.currentHP + bossHealAmount) } } : h
+          h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: Math.max(1, h.boss.currentHP - bossHealAmount) } } : h
         )
         setHabits(updatedHabits)
         saveHabits(updatedHabits)
@@ -501,6 +796,7 @@ export default function Dashboard({ token, onSignOut }) {
 
     completeTask(finalXP)
     earnCoins(finalCoins)
+    earnStatXP(statWeightsMap[taskId], finalXP, themedTitles[taskId] || taskObj?.title)
     await markTaskComplete(token, taskId)
 
     // Move task to "Completed Today" section
@@ -513,8 +809,8 @@ export default function Dashboard({ token, onSignOut }) {
     }
     setCompletedTasks(prev => {
       const next = [entry, ...prev]
-      const today = new Date().toISOString().slice(0, 10)
-      localStorage.setItem('qm_completed_today', JSON.stringify({ date: today, entries: next }))
+      const today = new Date().toLocaleDateString('en-CA')
+      writeJson('qm_completed_today', { date: today, entries: next })
       return next
     })
 
@@ -527,11 +823,21 @@ export default function Dashboard({ token, onSignOut }) {
     return { finalXP, finalCoins, note }
   }
 
+  // Deducts HP from the player, triggers reincarnation at 0. Returns true if died.
   async function handleComplete(taskId, xp, coinValue, difficulty) {
     try {
       const taskObj = tasks.find(t => t.id === taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
       const { finalXP, finalCoins, note } = await completeQuest(taskObj, taskId, xp, coinValue, difficulty)
+      // Record completion for any recurring def that materialized this task
+      const matchingDef = recurring.find(d => d.lastTaskId === taskId)
+      if (matchingDef) {
+        const updatedRecurring = recordCompletion(recurring, matchingDef.id)
+        setRecurring(updatedRecurring)
+        saveRecurringToDrive(token, saveRecurring(updatedRecurring))
+      }
+      // Completing a quest no longer costs HP — overdue cost is now the passive
+      // daily toll (runPenaltySweep), so finishing late is rewarded, not punished.
       setToast(`⚔️ Quest Complete! +${finalXP} XP${note}  +${finalCoins} 🪙`)
     } catch (err) {
       console.error('Failed to complete task:', err)
@@ -576,11 +882,11 @@ export default function Dashboard({ token, onSignOut }) {
     saveTaskOrderToDrive(token, payload)
   }
 
-  async function handleCreateSideQuests(parentId, titles) {
+  async function handleCreateSideQuests(parentId, sideQuests) {
     const created = []
-    for (const title of titles) {
+    for (const sq of sideQuests) {
       try {
-        const sub = await createSubtask(token, parentId, { title })
+        const sub = await createSubtask(token, parentId, sq)
         created.push(sub)
       } catch (err) {
         console.error('Failed to create side quest:', err)
@@ -596,6 +902,66 @@ export default function Dashboard({ token, onSignOut }) {
       loadTasksAndEvents() // refetch to get correct order + theme the new subtasks
     }
     setSideQuestParent(null)
+  }
+
+  async function handleSaveSubtask(parentId, taskId, data) {
+    await updateTask(token, taskId, data)
+    const current = subtasksByParent[parentId] || []
+    const updated = current.map(s =>
+      s.id === taskId
+        ? { ...s, title: data.title, due: data.due ? new Date(`${data.due}T00:00:00Z`).toISOString() : null, notes: data.notes || '' }
+        : s
+    )
+    const sorted = sortSubtasksByDate(updated)
+    const needsSort = sorted.some((s, i) => s.id !== updated[i].id)
+    setSubtasksByParent(prev => ({ ...prev, [parentId]: needsSort ? sorted : updated }))
+    setEditingSubtask(null)
+    if (needsSort) {
+      setToast('✏️ Side quest updated & re-sorted by date.')
+      persistSubtaskOrder(parentId, sorted)
+    } else {
+      setToast('✏️ Side quest updated.')
+    }
+    loadTasksAndEvents()
+  }
+
+  async function handleDeleteSubtaskFromEdit(parentId, taskId) {
+    await deleteTask(token, taskId)
+    setSubtasksByParent(prev => {
+      const next = { ...prev }
+      const list = (next[parentId] || []).filter(s => s.id !== taskId)
+      if (list.length) next[parentId] = list
+      else delete next[parentId]
+      return next
+    })
+    setEditingSubtask(null)
+    setToast('🗑 Side quest removed.')
+  }
+
+  function sortSubtasksByDate(subs) {
+    const dated = subs.filter(s => s.due).sort((a, b) => new Date(a.due) - new Date(b.due))
+    const undated = subs.filter(s => !s.due)
+    return [...dated, ...undated]
+  }
+
+  async function persistSubtaskOrder(parentId, orderedSubs) {
+    for (let i = 0; i < orderedSubs.length; i++) {
+      const previousId = i > 0 ? orderedSubs[i - 1].id : null
+      try {
+        await moveSubtask(token, orderedSubs[i].id, { parentId, previousId })
+      } catch (err) {
+        console.error('Failed to persist side quest order:', err)
+      }
+    }
+  }
+
+  async function handleSubtaskDragEnd(parentId, sourceIndex, destIndex) {
+    const subs = subtasksByParent[parentId] || []
+    const reordered = [...subs]
+    const [moved] = reordered.splice(sourceIndex, 1)
+    reordered.splice(destIndex, 0, moved)
+    setSubtasksByParent(prev => ({ ...prev, [parentId]: reordered }))
+    persistSubtaskOrder(parentId, reordered)
   }
 
   async function handleDeleteSubtask(parentId, taskId) {
@@ -629,8 +995,8 @@ export default function Dashboard({ token, onSignOut }) {
       }
       setCompletedTasks(prev => {
         const next = prev.filter(e => e.task.id !== entry.task.id)
-        const today = new Date().toISOString().slice(0, 10)
-        localStorage.setItem('qm_completed_today', JSON.stringify({ date: today, entries: next }))
+        const today = new Date().toLocaleDateString('en-CA')
+        writeJson('qm_completed_today', { date: today, entries: next })
         return next
       })
       setToast(`↩ "${entry.themedTitle || entry.task.title}" restored`)
@@ -642,8 +1008,8 @@ export default function Dashboard({ token, onSignOut }) {
   // Reads the coin ledger from localStorage (written synchronously by spendCoins/earnCoins)
   // and immediately pushes it to Drive so the other device sees it on its next poll.
   async function flushCoinsToD() {
-    const ce = Number(localStorage.getItem('qm_coins_earned') || 0)
-    const cs = Number(localStorage.getItem('qm_coins_spent')  || 0)
+    const ce = readNum('qm_coins_earned')
+    const cs = readNum('qm_coins_spent')
     await saveGameStateToDrive(token, { ...gameStateRef.current, coinsEarned: ce, coinsSpent: cs, coins: Math.max(0, ce - cs) })
   }
 
@@ -659,24 +1025,18 @@ export default function Dashboard({ token, onSignOut }) {
       updated = { ...character, ownedItems: [...character.ownedItems, itemId] }
     }
     spendCoins(item.cost)
-    setCharacter(updated)
-    await Promise.all([saveCharacter(token, updated), flushCoinsToD()])
+    await Promise.all([commitCharacter(updated), flushCoinsToD()])
     setToast(`🛒 ${item.name} purchased!`)
   }
 
-  async function handleEquipItem(itemId) {
-    const item = ITEMS[itemId]
-    if (!item?.slot || !character.ownedItems.includes(itemId)) return
-    let targetSlot = item.slot
-    if (item.slot === 'ring') {
-      if (!character.equippedItems?.['ring-1']) targetSlot = 'ring-1'
-      else if (!character.equippedItems?.['ring-2']) targetSlot = 'ring-2'
-      else targetSlot = 'ring-1' // both full — replace ring-1
-    }
-    const updated = { ...character, equippedItems: { ...character.equippedItems, [targetSlot]: itemId } }
-    setCharacter(updated)
-    await saveCharacter(token, updated)
-    setToast(`${item.emoji} ${item.name} equipped!`)
+  function handleEquipItem(itemId) {
+    const item = equipItem(itemId)
+    if (item) setToast(`${item.emoji} ${item.name} equipped!`)
+  }
+
+  function handleUnequipItem(itemId) {
+    const item = unequipItem(itemId)
+    if (item) setToast(`${item.emoji} ${item.name} unequipped`)
   }
 
   async function handleUseConsumable(itemId) {
@@ -684,14 +1044,18 @@ export default function Dashboard({ token, onSignOut }) {
     const count = (character.consumables || {})[itemId] || 0
     if (!item?.consumable || count <= 0) return
 
-    if (item.bossHeal) {
-      const target = habits.find(h => h.status === 'active')
-      if (!target) { setToast('No active bosses to heal!'); return }
-      const healedHP = Math.min(target.boss.maxHP, target.boss.currentHP + item.bossHeal)
-      const gained = healedHP - target.boss.currentHP
-      const updatedHabits = habits.map(h => h.id === target.id ? { ...h, boss: { ...h.boss, currentHP: healedHP } } : h)
-      setHabits(updatedHabits); saveHabits(updatedHabits); saveToDrive(token, updatedHabits)
-      setToast(`${item.emoji} ${target.boss.name} restored +${gained} HP!`)
+    // Start from the consumable decremented; branches layer their effect onto
+    // the same object so a single commit carries both (no stale-state clobber).
+    const consumables = { ...(character.consumables || {}), [itemId]: count - 1 }
+    if (consumables[itemId] <= 0) delete consumables[itemId]
+    let updated = { ...character, consumables }
+
+    if (item.playerHeal) {
+      const maxHP = character.maxHP ?? 100
+      const current = character.currentHP ?? maxHP
+      const healed = Math.min(maxHP, current + item.playerHeal)
+      updated = { ...updated, currentHP: healed }
+      setToast(`${item.emoji} Restored +${healed - current} HP! (${healed}/${maxHP})`)
     } else if (item.bossDamage) {
       const target = habits.find(h => h.status === 'active')
       if (!target) { setToast('No active bosses to target!'); return }
@@ -706,11 +1070,7 @@ export default function Dashboard({ token, onSignOut }) {
       setToast(item.flavorText || `${item.emoji} ${item.name} used.`)
     }
 
-    const consumables = { ...(character.consumables || {}), [itemId]: count - 1 }
-    if (consumables[itemId] <= 0) delete consumables[itemId]
-    const updated = { ...character, consumables }
-    setCharacter(updated)
-    await saveCharacter(token, updated)
+    await commitCharacter(updated)
   }
 
   async function handleSellItem(itemId) {
@@ -742,57 +1102,129 @@ export default function Dashboard({ token, onSignOut }) {
     }
 
     earnCoins(sellPrice)
-    setCharacter(updated)
-    await Promise.all([saveCharacter(token, updated), flushCoinsToD()])
+    await Promise.all([commitCharacter(updated), flushCoinsToD()])
     setToast(`💰 Sold ${item.name} for ${sellPrice} 🪙`)
   }
 
   async function handleCreateQuest(data) {
-    await createTask(token, data)
-    setShowCreateQuest(false)
-    setToast(`⚔️ Quest summoned: ${data.title}`)
-    loadTasksAndEvents()
+    // Guards against a double-tap/double-invocation firing this twice (same
+    // class of bug fixed for handleCreateMission) — without it, a re-entrant
+    // call creates both the task AND its companion calendar event twice,
+    // showing up as an overlapping duplicate on Google Calendar.
+    if (creatingQuestRef.current) return
+    creatingQuestRef.current = true
+    try {
+      const created = await createTask(token, data)
+      if (data.due && data.dueTime) {
+        try { await createEvent(token, buildCompanionEvent(data.title, data.due, data.dueTime, data.reminderMinutes)) } catch {}
+      }
+      // Immediately slot the new task into the saved order so computeDisplayOrder
+      // places it at the right end rather than wherever the API returns it.
+      if (created?.id) {
+        setTaskOrder(prev => {
+          const existing = prev.order.filter(id => id !== created.id)
+          const next = settings.newQuestPosition === 'top'
+            ? [created.id, ...existing]
+            : [...existing, created.id]
+          const payload = saveTaskOrder(next)
+          saveTaskOrderToDrive(token, payload)
+          return payload
+        })
+      }
+      setShowCreateQuest(false)
+      setToast(`⚔️ Quest summoned: ${data.title}`)
+      loadTasksAndEvents()
+    } finally {
+      creatingQuestRef.current = false
+    }
   }
 
-  function handleCreateRecurringFromModal({ title, notes, days }) {
-    handleCreateRecurring({ title, notes, days })
+  function handleCreateRecurringFromModal({ title, notes, days, dueTime, reminderMinutes }) {
+    handleCreateRecurring({ title, notes, days, dueTime, reminderMinutes })
     setShowCreateQuest(false)
   }
 
   async function handleCreateMission(data) {
-    await createEvent(token, data)
-    setShowCreateMission(false)
-    setToast(`📅 Mission inscribed: ${data.title}`)
-    loadTasksAndEvents()
+    if (creatingMissionRef.current) return
+    creatingMissionRef.current = true
+    try {
+      await createEvent(token, data)
+      setShowCreateMission(false)
+      setToast(`📅 Mission inscribed: ${data.title}`)
+      loadTasksAndEvents()
+    } finally {
+      creatingMissionRef.current = false
+    }
   }
 
   async function handleSelectClass(classId) {
-    // Auto-unequip any items incompatible with the new class
-    const equippedItems = { ...character.equippedItems }
-    let unequipped = []
-    Object.entries(equippedItems).forEach(([slot, itemId]) => {
-      if (!itemId) return
-      if (!isItemForClass(ITEMS[itemId], classId)) {
-        unequipped.push(ITEMS[itemId]?.name || itemId)
-        equippedItems[slot] = null
-      }
-    })
-    const updated = { ...character, class: classId, equippedItems }
-    setCharacter(updated)
+    const { unequipped } = await selectClass(classId)
     setShowCharacterSelect(false)
     const cls = CLASSES[classId]
     setToast(`${cls.emoji} You are now a ${cls.name}!`)
     if (unequipped.length) {
       setTimeout(() => setToast(`⚠️ Unequipped: ${unequipped.join(', ')} (incompatible with ${cls.name})`), 2200)
     }
-    await saveCharacter(token, updated)
   }
 
   async function handleSaveTask(taskId, data) {
-    await updateTask(token, taskId, data)
+    // Detect the "push the deadline to dodge penalties" cheat BEFORE the write,
+    // while editingTask still holds the original due date.
+    const pen = dueChangePenalty({
+      oldDue: dueDateOnly(editingTask?.due),
+      newDue: data.due,
+      hardMode: settings.hardMode,
+      character,
+    })
+
+    // Preserve the existing checklist — this modal doesn't edit it, and
+    // updateTask rebuilds notes from scratch, so omitting it would wipe it.
+    await updateTask(token, taskId, { ...data, checklist: parseChecklist(editingTask?.notes) })
+    // Only create a new companion event if the time, date, or reminder lead
+    // time actually changed — prevents stale companion events from
+    // accumulating in Google Calendar on every title/notes edit of a timed
+    // quest.
+    const oldTime = parseQuestTime(editingTask?.notes)
+    const oldReminder = parseQuestReminder(editingTask?.notes)
+    const oldDue = dueDateOnly(editingTask?.due)
+    const timeChanged = data.dueTime !== oldTime
+    const dateChanged = (data.due || null) !== oldDue
+    const reminderChanged = (data.reminderMinutes ?? null) !== (oldReminder ?? null)
+    if (data.due && data.dueTime && (timeChanged || dateChanged || reminderChanged)) {
+      try { await createEvent(token, buildCompanionEvent(data.title, data.due, data.dueTime, data.reminderMinutes)) } catch {}
+    }
+
+    // Remember the new due date so a later push can be detected again.
+    const ledger = {
+      ...penaltyLedgerRef.current,
+      dueDates: { ...penaltyLedgerRef.current.dueDates, [taskId]: data.due || null },
+    }
+    penaltyLedgerRef.current = ledger
+    saveLedger(ledger)
+    savePenaltyLedger(token, ledger)
+
     setEditingTask(null)
-    setToast('✏️ Quest updated.')
+    if (pen) {
+      if (pen.xp > 0) deductXP(pen.xp)
+      let died = false
+      if (pen.hp > 0) died = await damagePlayer(pen.hp)
+      setToast(died
+        ? `⏳ Deadline pushed — −${pen.xp} XP, and the strain felled you! Equipment lost, reincarnated.`
+        : `⏳ Deadline pushed past due — double toll: −${pen.xp} XP, −${pen.hp} ❤️ HP`)
+    } else {
+      setToast('✏️ Quest updated.')
+    }
     loadTasksAndEvents()
+  }
+
+  // Narrow save used by the checklist popup — only ever touches the
+  // checklist tag inside notes (see updateTaskChecklist), so it can't
+  // clobber the title/due/reminder the way a full updateTask would.
+  async function handleSaveChecklist(taskId, items) {
+    const taskObj = tasks.find(t => t.id === taskId)
+    if (!taskObj) return
+    const updated = await updateTaskChecklist(token, taskId, taskObj.notes, items)
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, notes: updated.notes } : t))
   }
 
   async function handleDeleteTask(taskId) {
@@ -909,6 +1341,13 @@ export default function Dashboard({ token, onSignOut }) {
     // coinValue is already fully adjusted (ranger + item bonuses applied in render)
     claimEvent(eventId, xp, coinValue)
     earnCoins(coinValue)
+    const eventTitle = events.find(e => e.id === eventId)?.summary || ''
+    earnStatXP(statWeightsMap[eventId], xp, eventTitle)
+    // Attended → settle the mission so it never incurs a past-due penalty.
+    const ledger = resolveMission(penaltyLedgerRef.current, eventId)
+    penaltyLedgerRef.current = ledger
+    saveLedger(ledger)
+    savePenaltyLedger(token, ledger)
     setToast(`🔮 Mission Claimed! +${xp} XP  +${coinValue} 🪙`)
   }
 
@@ -1021,27 +1460,25 @@ export default function Dashboard({ token, onSignOut }) {
     setToast(`🐉 ${newHabit.boss.name} has returned for a rematch!`)
   }
 
-  function handleCreateRecurring({ title, notes, days }) {
-    const def = createRecurringDef({ title, notes, days })
+  function handleCreateRecurring({ title, notes, days, dueTime, reminderMinutes }) {
+    const def = createRecurringDef({ title, notes, days, dueTime, reminderMinutes })
     const updated = [...recurring, def]
     setRecurring(updated)
-    saveRecurring(updated)
-    saveRecurringToDrive(token, updated)
-    setToast(`🔄 "${title}" will repeat ${scheduleLabel(days)}`)
+    saveRecurringToDrive(token, saveRecurring(updated))
+    const timeStr = dueTime ? ` at ${formatQuestTime(dueTime)}` : ''
+    setToast(`🔄 "${title}" will repeat ${scheduleLabel(days)}${timeStr}`)
   }
 
   function handleDeleteRecurring(id) {
     const updated = recurring.filter(d => d.id !== id)
     setRecurring(updated)
-    saveRecurring(updated)
-    saveRecurringToDrive(token, updated)
+    saveRecurringToDrive(token, saveRecurring(updated))
   }
 
   function handleToggleRecurring(id) {
     const updated = recurring.map(d => d.id === id ? { ...d, active: !d.active } : d)
     setRecurring(updated)
-    saveRecurring(updated)
-    saveRecurringToDrive(token, updated)
+    saveRecurringToDrive(token, saveRecurring(updated))
   }
 
   function handleResetAllBossStats() {
@@ -1057,11 +1494,15 @@ export default function Dashboard({ token, onSignOut }) {
   const defeatedHabits = habits.filter(h => h.status === 'defeated')
   const canAddHabit = activeHabits.length < 3
 
-  // Display order: undated quests keep their manual slot; dated quests sorted by date.
-  const orderedTasks = computeDisplayOrder(tasks, taskOrder.order)
+  // Display order: auto-sort by urgency when enabled, otherwise manual+date order.
+  const orderedTasks = settings.autoSort
+    ? computeAutoSortOrder(tasks, taskSeenMap)
+    : computeDisplayOrder(tasks, taskOrder.order)
 
   // Mission look-ahead window + day grouping for the multi-day view.
-  const lookAhead = settings.missionLookAhead || 0
+  // Crystal Ball (off-hand) forces a minimum of 3 days even if the user hasn't expanded manually.
+  const crystalBallEquipped = Object.values(character?.equippedItems || {}).includes('crystal-ball')
+  const lookAhead = crystalBallEquipped ? Math.max(3, settings.missionLookAhead || 0) : (settings.missionLookAhead || 0)
   const groupedEvents = lookAhead > 0 ? groupEventsByDay(events) : null
 
   const renderEventItem = (event) => (
@@ -1072,6 +1513,7 @@ export default function Dashboard({ token, onSignOut }) {
       claimed={isEventClaimed(event.id)}
       difficulty={getEffectiveDifficulty(event.id)}
       coinValue={applyRangerMissionBonus(BASE_COIN_VALUE[getEffectiveDifficulty(event.id)] || BASE_COIN_VALUE.normal, character.class) + getItemMissionBonus(character)}
+      revealMs={settings.revealMs || 5000}
       onClaim={handleClaim}
       onUnclaim={handleUnclaimEvent}
       onDifficultyChange={handleDifficultyChange}
@@ -1096,6 +1538,9 @@ export default function Dashboard({ token, onSignOut }) {
       <audio ref={bgmRef} src={BGM_SRC} loop preload="auto" style={{ display: 'none' }} />
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {penaltyReport && (
+        <PenaltyReportModal report={penaltyReport} onClose={() => setPenaltyReport(null)} />
+      )}
       {showCreateHabit && (
         <CreateHabitModal
           onClose={() => setShowCreateHabit(false)}
@@ -1107,12 +1552,14 @@ export default function Dashboard({ token, onSignOut }) {
           onClose={() => setShowCreateQuest(false)}
           onCreate={handleCreateQuest}
           onCreateRecurring={handleCreateRecurringFromModal}
+          defaultReminderMinutes={settings.defaultReminderMinutes}
         />
       )}
       {showCreateMission && (
         <CreateMissionModal
           onClose={() => setShowCreateMission(false)}
           onCreate={handleCreateMission}
+          defaultReminderMinutes={settings.defaultReminderMinutes}
         />
       )}
       {sideQuestParent && (
@@ -1129,6 +1576,24 @@ export default function Dashboard({ token, onSignOut }) {
           onClose={() => setEditingTask(null)}
           onSave={handleSaveTask}
           onDelete={handleDeleteTask}
+          defaultReminderMinutes={settings.defaultReminderMinutes}
+        />
+      )}
+      {checklistTask && (
+        <ChecklistModal
+          task={checklistTask}
+          checklist={parseChecklist(checklistTask.notes)}
+          onClose={() => setChecklistTask(null)}
+          onSave={handleSaveChecklist}
+        />
+      )}
+      {editingSubtask && (
+        <EditQuestModal
+          task={editingSubtask.sub}
+          onClose={() => setEditingSubtask(null)}
+          onSave={(taskId, data) => handleSaveSubtask(editingSubtask.parentId, taskId, data)}
+          onDelete={(taskId) => handleDeleteSubtaskFromEdit(editingSubtask.parentId, taskId)}
+          defaultReminderMinutes={settings.defaultReminderMinutes}
         />
       )}
       {editingEvent && (
@@ -1137,6 +1602,7 @@ export default function Dashboard({ token, onSignOut }) {
           onClose={() => setEditingEvent(null)}
           onSave={handleSaveEvent}
           onDelete={handleDeleteEvent}
+          defaultReminderMinutes={settings.defaultReminderMinutes}
         />
       )}
       {showGlossary && (
@@ -1169,13 +1635,50 @@ export default function Dashboard({ token, onSignOut }) {
         />
       )}
 
-      <header className="header">
+      {showStatEditor && (
+        <StatEditorModal
+          stat={editingStat}
+          onSave={handleSaveStat}
+          onDelete={handleDeleteStat}
+          onClose={() => { setShowStatEditor(false); setEditingStat(null) }}
+        />
+      )}
+
+      {helpTopic && <HelpModal topic={helpTopic} onClose={() => setHelpTopic(null)} />}
+
+      {showInventory && (
+        <InventoryModal
+          character={character}
+          onClose={() => setShowInventory(false)}
+          onEquip={handleEquipItem}
+          onUnequip={handleUnequipItem}
+          onUse={handleUseConsumable}
+        />
+      )}
+
+      {showStatDetail && detailStat && (
+        <StatDetailModal
+          stat={detailStat}
+          history={readJson('qm_stat_history', {})[detailStat.id] || []}
+          onEdit={detailStat.custom ? () => { setShowStatDetail(false); setEditingStat(detailStat); setShowStatEditor(true) } : null}
+          onClose={() => { setShowStatDetail(false); setDetailStat(null) }}
+        />
+      )}
+
+      <header className="header" ref={headerRef}>
         <div className="header-top">
           <h1 className="header-title">⚔️ QuestMaster</h1>
           <div className="header-right">
             {syncStatus === 'ok' && <span className="sync-dot sync-dot--ok" title="Drive sync active" />}
             {syncStatus === 'scope' && <span className="sync-dot sync-dot--error" title="Sign out and back in to enable Drive sync" />}
             {syncStatus === 'network' && <span className="sync-dot sync-dot--warn" title="Drive sync unavailable" />}
+            <button
+              className={`nav-btn${view === 'map' ? ' nav-btn--active' : ''}`}
+              onClick={() => setView(v => v === 'map' ? 'quests' : 'map')}
+            >
+              <span className="nav-btn-icon">🗺️</span>
+              <span className="nav-btn-label">Map</span>
+            </button>
             <button
               className={`nav-btn${view === 'chronicle' ? ' nav-btn--active' : ''}`}
               onClick={() => setView(v => v === 'chronicle' ? 'quests' : 'chronicle')}
@@ -1194,11 +1697,26 @@ export default function Dashboard({ token, onSignOut }) {
               <span className="nav-btn-icon">📜</span>
               <span className="nav-btn-label">Lore</span>
             </button>
-            <button className="nav-btn" onClick={() => setShowSettings(true)}>
-              <span className="nav-btn-icon">⚙️</span>
-              <span className="nav-btn-label">Settings</span>
-            </button>
-            <button className="signout-btn" onClick={onSignOut}>Sign out</button>
+            <div className="nav-menu-wrap" ref={menuRef}>
+              <button
+                className={`nav-btn${showMenu ? ' nav-btn--active' : ''}`}
+                onClick={() => setShowMenu(v => !v)}
+                aria-label="More options"
+              >
+                <span className="nav-btn-icon nav-btn-icon--dots">⋯</span>
+                <span className="nav-btn-label">More</span>
+              </button>
+              {showMenu && (
+                <div className="nav-dropdown">
+                  <button className="nav-dropdown-item" onClick={() => { setShowSettings(true); setShowMenu(false) }}>
+                    ⚙️ Settings
+                  </button>
+                  <button className="nav-dropdown-item nav-dropdown-item--danger" onClick={() => { setShowMenu(false); onSignOut() }}>
+                    🚪 Sign out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="date-label">{todayLabel}</div>
@@ -1226,6 +1744,20 @@ export default function Dashboard({ token, onSignOut }) {
           </div>
           <div className="xp-bar-label">{xpInto} / {xpNeeded} XP → Level {level + 1}</div>
         </div>
+        {character.class && (() => {
+          const maxHP = character.maxHP ?? 100
+          const currentHP = character.currentHP ?? maxHP
+          const hpPct = Math.max(0, Math.min(1, currentHP / maxHP))
+          const hpTier = hpPct > 0.5 ? 'high' : hpPct > 0.25 ? 'mid' : 'low'
+          return (
+            <div className="hp-bar-wrap">
+              <div className="hp-bar-track">
+                <div className={`hp-bar-fill hp-bar-fill--${hpTier}`} style={{ width: `${hpPct * 100}%` }} />
+              </div>
+              <div className="hp-bar-label">❤️ {currentHP} / {maxHP} HP</div>
+            </div>
+          )
+        })()}
         {streakBanner && (
           <div className={`streak-banner streak-banner--${streakBanner.type}`}>
             {streakBanner.text}
@@ -1233,14 +1765,25 @@ export default function Dashboard({ token, onSignOut }) {
         )}
       </header>
 
-      <main className="main">
+      <main className={`main${view === 'map' ? ' main--map' : ''}`}>
         {loading && <div className="loading">Summoning your quests...</div>}
         {error && <div className="error">{error}</div>}
+
+        {!loading && !error && view === 'map' && (
+          <WorldMap
+            tasks={tasks}
+            events={events}
+            locations={locations}
+            onPinAdded={addPin}
+            onPinRemoved={removePin}
+          />
+        )}
 
         {!loading && !error && view === 'chronicle' && (
           <Chronicle
             history={history}
             habits={habits}
+            recurring={recurring}
             onResetBossStats={handleResetAllBossStats}
             onResetStats={resetStats}
           />
@@ -1253,10 +1796,16 @@ export default function Dashboard({ token, onSignOut }) {
             coins={coins}
             points={points}
             bossesDefeated={defeatedHabits.length}
+            stats={stats}
             onChangeClass={() => setShowCharacterSelect(true)}
             onVisitShop={(cat) => { setShopStartCategory(cat || 'weapon'); setView('shop') }}
             onSlotTap={(cat) => { setShopStartCategory(cat); setView('shop') }}
+            onUnequip={handleUnequipItem}
+            onOpenInventory={() => setShowInventory(true)}
             onBossJournal={() => setShowBossJournal(true)}
+            onViewStat={(stat) => { setDetailStat(stat); setShowStatDetail(true) }}
+            onAddStat={() => { setEditingStat(null); setShowStatEditor(true) }}
+            onEditStat={(stat) => { setEditingStat(stat); setShowStatEditor(true) }}
           />
         )}
 
@@ -1267,6 +1816,7 @@ export default function Dashboard({ token, onSignOut }) {
             habits={habits}
             onBuy={handleBuyItem}
             onEquip={handleEquipItem}
+            onUnequip={handleUnequipItem}
             onUse={handleUseConsumable}
             onSell={handleSellItem}
             onBack={() => setView('character')}
@@ -1282,12 +1832,13 @@ export default function Dashboard({ token, onSignOut }) {
                   ⚔️ Today's Quests
                   {theming && <span className="theming-badge">✨ Enchanting...</span>}
                 </h2>
+                <HelpButton topic="quests" onHelp={setHelpTopic} />
                 <button className="add-habit-btn" onClick={() => setShowCreateQuest(true)}>
                   + New Quest
                 </button>
               </div>
               {tasks.length === 0 && completedTasks.length === 0
-                ? <p className="empty">All quests complete — you're a legend! 🎉</p>
+                ? <p className="empty">No quests today — your Google Tasks for today will appear here. Tap <strong>+ New Quest</strong> to create one.</p>
                 : (
                   <DragDropContext onDragEnd={handleDragEnd}>
                     <Droppable droppableId="quests">
@@ -1298,7 +1849,7 @@ export default function Dashboard({ token, onSignOut }) {
                               key={task.id}
                               draggableId={task.id}
                               index={index}
-                              isDragDisabled={Boolean(task.due)}
+                              isDragDisabled={settings.autoSort || Boolean(task.due)}
                             >
                               {(dragProvided, dragSnapshot) => (
                                 <div
@@ -1312,6 +1863,7 @@ export default function Dashboard({ token, onSignOut }) {
                                     difficulty={getEffectiveDifficulty(task.id)}
                                     coinValue={computeCoins(task.id, getEffectiveDifficulty(task.id), taskSeenMap, character.class)}
                                     diceBonus={classDiceBonus(character.class) + getItemDiceBonus(character)}
+                                    revealMs={settings.revealMs || 5000}
                                     onComplete={handleComplete}
                                     onDifficultyChange={handleDifficultyChange}
                                     onEdit={() => setEditingTask(task)}
@@ -1322,8 +1874,11 @@ export default function Dashboard({ token, onSignOut }) {
                                     characterClass={character.class}
                                     onCompleteSubtask={handleCompleteSubtask}
                                     onDeleteSubtask={handleDeleteSubtask}
+                                    onEditSubtask={(sub) => setEditingSubtask({ sub, parentId: task.id })}
+                                    onSubtaskDragEnd={handleSubtaskDragEnd}
                                     onAddSideQuests={() => handleOpenSideQuests(task)}
-                                    dragHandleProps={task.due ? null : dragProvided.dragHandleProps}
+                                    onOpenChecklist={() => setChecklistTask(task)}
+                                    dragHandleProps={(settings.autoSort || task.due) ? null : dragProvided.dragHandleProps}
                                     isDated={Boolean(task.due)}
                                   />
                                 </div>
@@ -1340,11 +1895,15 @@ export default function Dashboard({ token, onSignOut }) {
 
               {completedTasks.length > 0 && (
                 <div className="completed-section">
-                  <div className="completed-section-header">
+                  <button
+                    className="completed-section-header recurring-section-header--btn"
+                    onClick={() => setShowCompletedList(v => !v)}
+                  >
                     <span className="completed-section-label">✓ Completed Today</span>
                     <span className="completed-section-count">{completedTasks.length}</span>
-                  </div>
-                  {completedTasks.map(entry => (
+                    <span className="recurring-chevron">{showCompletedList ? '▲' : '▼'}</span>
+                  </button>
+                  {showCompletedList && completedTasks.map(entry => (
                     <div key={entry.task.id} className="completed-row">
                       <span className="completed-row-check">✓</span>
                       <span className="completed-row-name">
@@ -1364,14 +1923,17 @@ export default function Dashboard({ token, onSignOut }) {
 
               {recurring.length > 0 && (
                 <div className="completed-section">
-                  <button
-                    className="completed-section-header recurring-section-header--btn"
-                    onClick={() => setShowRecurringList(v => !v)}
-                  >
-                    <span className="completed-section-label" style={{ color: 'var(--accent-light)' }}>🔄 Recurring</span>
-                    <span className="completed-section-count" style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--accent-light)' }}>{recurring.length}</span>
-                    <span className="recurring-chevron">{showRecurringList ? '▲' : '▼'}</span>
-                  </button>
+                  <div className="recurring-header-row">
+                    <button
+                      className="completed-section-header recurring-section-header--btn"
+                      onClick={() => setShowRecurringList(v => !v)}
+                    >
+                      <span className="completed-section-label" style={{ color: 'var(--accent-light)' }}>🔄 Recurring</span>
+                      <span className="completed-section-count" style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--accent-light)' }}>{recurring.length}</span>
+                      <span className="recurring-chevron">{showRecurringList ? '▲' : '▼'}</span>
+                    </button>
+                    <HelpButton topic="recurring" onHelp={setHelpTopic} />
+                  </div>
                   {showRecurringList && recurring.map(def => (
                     <div key={def.id} className={`completed-row${!def.active ? ' recurring-row--paused' : ''}`}>
                       <span className="completed-row-check" style={{ color: def.active ? 'var(--accent-light)' : 'var(--text-muted)' }}>
@@ -1381,7 +1943,9 @@ export default function Dashboard({ token, onSignOut }) {
                         <span className="completed-row-name" style={{ textDecoration: 'none', color: def.active ? 'var(--text)' : 'var(--text-muted)' }}>
                           {themedTitles[def.id] || def.title}
                         </span>
-                        <span className="recurring-row-schedule">{scheduleLabel(def.days)}</span>
+                        <span className="recurring-row-schedule">
+                          {scheduleLabel(def.days)}{def.dueTime ? ` · ⏰ ${formatQuestTime(def.dueTime)}` : ''}
+                        </span>
                       </div>
                       <div className="recurring-row-actions">
                         <button
@@ -1404,6 +1968,7 @@ export default function Dashboard({ token, onSignOut }) {
             <section className="section">
               <div className="section-title-row">
                 <h2 className="section-title">📅 {lookAhead > 0 ? 'Upcoming Missions' : "Today's Missions"}</h2>
+                <HelpButton topic="missions" onHelp={setHelpTopic} />
                 <button className="add-habit-btn" onClick={() => setShowCreateMission(true)}>
                   + New Mission
                 </button>
@@ -1420,7 +1985,7 @@ export default function Dashboard({ token, onSignOut }) {
                 ))}
               </div>
               {events.length === 0
-                ? <p className="empty">{lookAhead > 0 ? 'No missions in this window — clear skies ahead.' : 'No missions today — rest up, hero.'}</p>
+                ? <p className="empty">{lookAhead > 0 ? 'No missions in this window. Events from your Google Calendar appear here.' : 'No missions today. Events from your Google Calendar appear here — try expanding the look-ahead window above.'}</p>
                 : lookAhead > 0
                   ? groupedEvents.map(group => (
                       <div key={group.key} className="mission-day-group">
@@ -1435,6 +2000,7 @@ export default function Dashboard({ token, onSignOut }) {
             <section className="section">
               <div className="section-title-row">
                 <h2 className="section-title">🐉 Active Bosses</h2>
+                <HelpButton topic="bosses" onHelp={setHelpTopic} />
                 {canAddHabit && (
                   <button className="add-habit-btn" onClick={() => setShowCreateHabit(true)}>
                     + New Habit
@@ -1442,7 +2008,7 @@ export default function Dashboard({ token, onSignOut }) {
                 )}
               </div>
               {activeHabits.length === 0 && defeatedHabits.length === 0 && (
-                <p className="empty">No bosses yet — forge a habit to summon one.</p>
+                <p className="empty">No boss battles yet. Create a habit with <strong>+ New Habit</strong> to summon your first boss — each missed day lets it heal, so stay consistent.</p>
               )}
               {activeHabits.map(habit => (
                 <BossCard

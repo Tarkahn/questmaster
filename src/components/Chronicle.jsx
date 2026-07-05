@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import XPBarChart from './XPBarChart'
 import LevelLineChart from './LevelLineChart'
+import MissedQuestsChart from './MissedQuestsChart'
+import HelpModal, { HelpButton } from './HelpModal'
 
-export default function Chronicle({ history = [], habits = [], onResetBossStats, onResetStats }) {
+export default function Chronicle({ history = [], habits = [], recurring = [], onResetBossStats, onResetStats }) {
+  const [helpTopic, setHelpTopic] = useState(null)
   const [confirmBossReset, setConfirmBossReset] = useState(false)
   const [confirmStatsReset, setConfirmStatsReset] = useState(false)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = new Date().toLocaleDateString('en-CA')
   const todayRow = history.find(h => h.date === today)
   const totalXpEarned = history.reduce((sum, h) => sum + (h.xpEarned || 0), 0)
   const totalQuests = history.reduce((sum, h) => sum + (h.tasksCompleted || 0), 0)
@@ -25,13 +28,18 @@ export default function Chronicle({ history = [], habits = [], onResetBossStats,
 
   return (
     <>
+      {helpTopic && <HelpModal topic={helpTopic} onClose={() => setHelpTopic(null)} />}
+
       <section className="section">
         <h2 className="section-title">📜 Your Chronicle</h2>
         <p className="empty">A retrospective of your adventures so far.</p>
       </section>
 
       <section className="section">
-        <h3 className="defeated-title">⚡ Today</h3>
+        <div className="chronicle-section-heading">
+          <h3 className="defeated-title">⚡ Today</h3>
+          <HelpButton topic="chronicle-today" onHelp={setHelpTopic} />
+        </div>
         <div className="chronicle-cards">
           <div className="chronicle-card">
             <div className="chronicle-card-value">{todayRow?.xpEarned ?? 0}</div>
@@ -49,21 +57,30 @@ export default function Chronicle({ history = [], habits = [], onResetBossStats,
       </section>
 
       <section className="section">
-        <h3 className="defeated-title">🗓 Last 7 days</h3>
+        <div className="chronicle-section-heading">
+          <h3 className="defeated-title">🗓 Last 7 days</h3>
+          <HelpButton topic="chronicle-7day" onHelp={setHelpTopic} />
+        </div>
         <div className="chronicle-chart">
           <XPBarChart history={history} />
         </div>
       </section>
 
       <section className="section">
-        <h3 className="defeated-title">📈 Level progression</h3>
+        <div className="chronicle-section-heading">
+          <h3 className="defeated-title">📈 Level progression</h3>
+          <HelpButton topic="chronicle-level" onHelp={setHelpTopic} />
+        </div>
         <div className="chronicle-chart">
           <LevelLineChart history={history} />
         </div>
       </section>
 
       <section className="section">
-        <h3 className="defeated-title">🐉 Bosses</h3>
+        <div className="chronicle-section-heading">
+          <h3 className="defeated-title">🐉 Bosses</h3>
+          <HelpButton topic="chronicle-bosses" onHelp={setHelpTopic} />
+        </div>
         <div className="chronicle-cards">
           <div className="chronicle-card">
             <div className="chronicle-card-value">{activeHabits.length}</div>
@@ -111,8 +128,42 @@ export default function Chronicle({ history = [], habits = [], onResetBossStats,
         )}
       </section>
 
+      {recurring.length > 0 && (
+        <section className="section">
+          <div className="chronicle-section-heading">
+            <h3 className="defeated-title">🔁 Recurring Quests</h3>
+            <HelpButton topic="chronicle-recurring" onHelp={setHelpTopic} />
+          </div>
+          <div className="chronicle-recurring-list">
+            {recurring.map(def => (
+              <div key={def.id} className={`chronicle-recurring-row${!def.active ? ' chronicle-recurring-row--paused' : ''}`}>
+                <span className="chronicle-recurring-name">{def.title}</span>
+                <div className="chronicle-recurring-stats">
+                  <span className="chronicle-recurring-streak" title="Current streak">
+                    🔥 {def.streak || 0}
+                  </span>
+                  <span className="chronicle-recurring-best" title="Best streak">
+                    ⭐ {def.bestStreak || 0}
+                  </span>
+                  <span className="chronicle-recurring-missed" title="Total missed">
+                    💀 {def.missedCount || 0}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="chronicle-chart" style={{ marginTop: '12px' }}>
+            <div className="chronicle-chart-label">Missed per day — last 30 days</div>
+            <MissedQuestsChart recurring={recurring} />
+          </div>
+        </section>
+      )}
+
       <section className="section">
-        <h3 className="defeated-title">🏆 All-time</h3>
+        <div className="chronicle-section-heading">
+          <h3 className="defeated-title">🏆 All-time</h3>
+          <HelpButton topic="chronicle-alltime" onHelp={setHelpTopic} />
+        </div>
         <div className="chronicle-cards">
           <div className="chronicle-card">
             <div className="chronicle-card-value">{totalXpEarned}</div>

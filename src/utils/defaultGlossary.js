@@ -7,22 +7,23 @@ Changes take effect after saving (new items only).
 ═══════════════════════════════════════════
 
 LOCATIONS:
+NOTE: Named stores and brands are kept as-is so you always know where to go.
+Only generic location types are translated below.
+
 Home / house / apartment → "your Stronghold" or "the Keep"
 Work / office / workplace → "the Guild Hall"
-Gym / Planet Fitness / YMCA / fitness center → "the Iron Keep" or "the Training Grounds"
-Grocery store / Kroger / Meijer / supermarket → "the Market" or "the Provisions Quarter"
-Walmart → "the Grand Bazaar"
-Target → "the Merchant's Barracks"
-Home Depot / Lowe's / hardware store → "the Smithy" or "the Artificer's Forge"
-Best Buy / electronics store → "the Artificer's Workshop"
-Pharmacy / CVS / Walgreens → "the Apothecary"
+Gym / fitness center → "the Iron Keep" or "the Training Grounds"
+Grocery store / supermarket → "the Market" or "the Provisions Quarter"
+Hardware store → "the Smithy" or "the Artificer's Forge"
+Electronics store → "the Artificer's Workshop"
+Pharmacy / drugstore → "the Apothecary"
 Restaurant / casual dining → "the Tavern"
 Restaurant / sit-down / nicer → "the Inn's Feast Hall"
-Coffee shop / Starbucks / café → "the Brewmaster's Lodge"
+Coffee shop / café → "the Brewmaster's Lodge"
 Bar / brewery / pub → "the Alehouse"
 Doctor's office / physician / clinic → "the Healer's Sanctum"
 Dentist → "the Tooth-Mage's Tower"
-Hospital / IU Health / urgent care → "the Grand Infirmary"
+Hospital / urgent care → "the Grand Infirmary"
 Indiana University / IU / campus → "the Grand Academy"
 School / college / university → "the Academy"
 Library → "the Scriptorium"
@@ -35,7 +36,7 @@ Church / cathedral / place of worship → "the Temple" or "the Grand Sanctum"
 Gas station → "the Ostler's Post" (where steeds are fueled)
 Auto shop / mechanic / car dealership → "the Stables" or "the Wainwright's Shop"
 Airport → "the Skygate"
-Post office / UPS / FedEx → "the Herald's Post"
+Post office / package delivery → "the Herald's Post"
 Laundromat / laundry → "the Cleansing Chamber"
 Hair salon / barbershop → "the Barber's Post"
 

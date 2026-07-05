@@ -61,6 +61,30 @@ export function computeDisplayOrder(tasks, savedOrder) {
   return resultIds.map(id => byId.get(id)).filter(Boolean)
 }
 
+// Auto-sort by urgency: most overdue at top, freshest undated at bottom.
+// Dated and undated tasks are ranked on the same tier scale so a stale
+// undated quest (yellow) correctly outranks a fresh dated quest (green).
+import { questUrgency } from './urgency'
+import { localMidnight } from './api'
+
+export function computeAutoSortOrder(tasks, taskSeenMap) {
+  const todayMs = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime() })()
+  const TIER = { overdue: 5000, critical: 4000, urgent: 3000, aging: 2000, fresh: 1000 }
+
+  function score(task) {
+    // Dated-overdue gets its own band so it always outranks stale undated tasks
+    if (task.due) {
+      const dueMs = localMidnight(task.due).getTime()
+      const daysLeft = Math.round((dueMs - todayMs) / 86400000)
+      if (daysLeft < 0) return 10000 + (-daysLeft) * 100
+    }
+    const { pct, tier } = questUrgency(task, taskSeenMap)
+    return (TIER[tier] ?? 1000) + pct
+  }
+
+  return [...tasks].sort((a, b) => score(b) - score(a))
+}
+
 // Reorders the displayed id list after a drag (from index -> to index).
 export function reorderIds(displayedIds, fromIndex, toIndex) {
   const next = [...displayedIds]

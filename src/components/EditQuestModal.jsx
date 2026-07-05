@@ -1,16 +1,20 @@
 import { useState } from 'react'
 import DatePicker from './DatePicker'
+import TimePicker from './TimePicker'
+import { parseQuestTime, parseQuestReminder, REMINDER_OPTIONS, stripAuxTags, dueDateOnly } from '../utils/api'
 
 function parseDueDate(due) {
-  if (!due) return ''
-  // Google Tasks returns ISO timestamp; extract YYYY-MM-DD in local time
-  return new Date(due).toLocaleDateString('en-CA') // en-CA gives YYYY-MM-DD
+  return dueDateOnly(due) || ''
 }
 
-export default function EditQuestModal({ task, onClose, onSave, onDelete }) {
+export default function EditQuestModal({ task, onClose, onSave, onDelete, defaultReminderMinutes = 30 }) {
   const [title, setTitle] = useState(task.title || '')
   const [due, setDue] = useState(parseDueDate(task.due))
-  const [notes, setNotes] = useState(task.notes || '')
+  const existingTime = parseQuestTime(task.notes)
+  const [dueTime, setDueTime] = useState(existingTime || '09:00')
+  const [showTime, setShowTime] = useState(Boolean(existingTime))
+  const [reminderMinutes, setReminderMinutes] = useState(parseQuestReminder(task.notes) ?? defaultReminderMinutes)
+  const [notes, setNotes] = useState(stripAuxTags(task.notes))
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -22,7 +26,13 @@ export default function EditQuestModal({ task, onClose, onSave, onDelete }) {
     setSaving(true)
     setError(null)
     try {
-      await onSave(task.id, { title: title.trim(), due: due || undefined, notes: notes.trim() || undefined })
+      await onSave(task.id, {
+        title: title.trim(),
+        due: due || undefined,
+        dueTime: (due && showTime) ? dueTime : undefined,
+        reminderMinutes: (due && showTime) ? reminderMinutes : undefined,
+        notes: notes.trim() || undefined,
+      })
     } catch (err) {
       setError(err.message || 'Could not save quest.')
       setSaving(false)
@@ -60,8 +70,35 @@ export default function EditQuestModal({ task, onClose, onSave, onDelete }) {
 
           <div className="form-label">
             Due date <span className="form-optional">(optional)</span>
-            <DatePicker value={due} onChange={setDue} allowClear />
+            <DatePicker value={due} onChange={val => { setDue(val); if (!val) setShowTime(false) }} allowClear />
           </div>
+
+          {due && (
+            <div className="form-label">
+              <label className="quest-time-toggle">
+                <input
+                  type="checkbox"
+                  checked={showTime}
+                  onChange={e => setShowTime(e.target.checked)}
+                />
+                <span>⏰ Set a time <span className="form-optional">(adds Google Calendar reminder)</span></span>
+              </label>
+              {showTime && (
+                <div className="quest-time-picker">
+                  <TimePicker value={dueTime} onChange={setDueTime} />
+                  <select
+                    className="form-input quest-reminder-select"
+                    value={reminderMinutes}
+                    onChange={e => setReminderMinutes(Number(e.target.value))}
+                  >
+                    {REMINDER_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>🔔 {o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
 
           <label className="form-label">
             Notes <span className="form-optional">(optional)</span>

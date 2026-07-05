@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import DatePicker from './DatePicker'
+import TimePicker from './TimePicker'
+import { REMINDER_OPTIONS } from '../utils/api'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const DAY_FULL   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -19,15 +21,26 @@ function matchPreset(days) {
   return 'Custom'
 }
 
-export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring }) {
-  const [title, setTitle]       = useState('')
-  const [due, setDue]           = useState('')
-  const [notes, setNotes]       = useState('')
-  const [saving, setSaving]     = useState(false)
-  const [error, setError]       = useState(null)
-  const [repeats, setRepeats]   = useState(false)
-  const [days, setDays]         = useState([1,2,3,4,5])
-  const [preset, setPreset]     = useState('Weekdays')
+export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring, defaultReminderMinutes = 30 }) {
+  const [title, setTitle]               = useState('')
+  const [due, setDue]                   = useState('')
+  const [dueTime, setDueTime]           = useState('09:00')
+  const [showTime, setShowTime]         = useState(false)
+  const [reminderMinutes, setReminderMinutes] = useState(defaultReminderMinutes)
+  const [recurringTime, setRecurringTime] = useState('09:00')
+  const [showRecurringTime, setShowRecurringTime] = useState(false)
+  const [recurringReminderMinutes, setRecurringReminderMinutes] = useState(defaultReminderMinutes)
+  const [notes, setNotes]               = useState('')
+  const [saving, setSaving]             = useState(false)
+  const [error, setError]               = useState(null)
+  const [repeats, setRepeats]           = useState(false)
+  const [days, setDays]                 = useState([1,2,3,4,5])
+  const [preset, setPreset]             = useState('Weekdays')
+
+  function handleDueChange(val) {
+    setDue(val)
+    if (!val) setShowTime(false)
+  }
 
   function applyPreset(p) {
     setPreset(p.label)
@@ -52,9 +65,17 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring 
           title: title.trim(),
           notes: notes.trim() || undefined,
           days: [...days].sort((a,b) => a-b),
+          dueTime: showRecurringTime ? recurringTime : undefined,
+          reminderMinutes: showRecurringTime ? recurringReminderMinutes : undefined,
         })
       } else {
-        await onCreate({ title: title.trim(), due: due || undefined, notes: notes.trim() || undefined })
+        await onCreate({
+          title: title.trim(),
+          due: due || undefined,
+          dueTime: (due && showTime) ? dueTime : undefined,
+          reminderMinutes: (due && showTime) ? reminderMinutes : undefined,
+          notes: notes.trim() || undefined,
+        })
       }
     } catch (err) {
       setError(err.message || 'Could not save quest.')
@@ -85,7 +106,34 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring 
           {!repeats && (
             <div className="form-label">
               Due date <span className="form-optional">(optional)</span>
-              <DatePicker value={due} onChange={setDue} allowClear />
+              <DatePicker value={due} onChange={handleDueChange} allowClear />
+            </div>
+          )}
+
+          {!repeats && due && (
+            <div className="form-label">
+              <label className="quest-time-toggle">
+                <input
+                  type="checkbox"
+                  checked={showTime}
+                  onChange={e => setShowTime(e.target.checked)}
+                />
+                <span>⏰ Set a time <span className="form-optional">(adds Google Calendar reminder)</span></span>
+              </label>
+              {showTime && (
+                <div className="quest-time-picker">
+                  <TimePicker value={dueTime} onChange={setDueTime} />
+                  <select
+                    className="form-input quest-reminder-select"
+                    value={reminderMinutes}
+                    onChange={e => setReminderMinutes(Number(e.target.value))}
+                  >
+                    {REMINDER_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>🔔 {o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           )}
 
@@ -139,6 +187,28 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring 
               </div>
               {days.length === 0 && (
                 <p className="recurring-day-warn">Select at least one day.</p>
+              )}
+              <label className="quest-time-toggle" style={{ marginTop: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={showRecurringTime}
+                  onChange={e => setShowRecurringTime(e.target.checked)}
+                />
+                <span>⏰ Set a daily time <span className="form-optional">(Google Calendar reminder)</span></span>
+              </label>
+              {showRecurringTime && (
+                <div className="quest-time-picker">
+                  <TimePicker value={recurringTime} onChange={setRecurringTime} />
+                  <select
+                    className="form-input quest-reminder-select"
+                    value={recurringReminderMinutes}
+                    onChange={e => setRecurringReminderMinutes(Number(e.target.value))}
+                  >
+                    {REMINDER_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>🔔 {o.label}</option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
           )}

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import DatePicker from './DatePicker'
 import TimePicker from './TimePicker'
+import { REMINDER_OPTIONS } from '../utils/api'
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10)
+  return new Date().toLocaleDateString('en-CA')
 }
 
 // Current time, rounded to the nearest 5 minutes
@@ -22,12 +23,13 @@ function addHour(hhmm) {
   return d.toTimeString().slice(0, 5)
 }
 
-export default function CreateMissionModal({ onClose, onCreate }) {
+export default function CreateMissionModal({ onClose, onCreate, defaultReminderMinutes = 30 }) {
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(todayStr())
   const [start, setStart] = useState(defaultStart())
   const [end, setEnd] = useState(addHour(defaultStart()))
   const [allDay, setAllDay] = useState(false)
+  const [reminderMinutes, setReminderMinutes] = useState(defaultReminderMinutes)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -54,6 +56,7 @@ export default function CreateMissionModal({ onClose, onCreate }) {
         start: allDay ? undefined : start,
         end: allDay ? undefined : end,
         allDay,
+        reminderMinutes: allDay ? undefined : reminderMinutes,
         notes: notes.trim() || undefined,
       })
     } catch (err) {
@@ -106,6 +109,18 @@ export default function CreateMissionModal({ onClose, onCreate }) {
                 End
                 <TimePicker value={end} onChange={setEnd} />
               </div>
+              <label className="form-label">
+                🔔 Reminder
+                <select
+                  className="form-input"
+                  value={reminderMinutes}
+                  onChange={e => setReminderMinutes(Number(e.target.value))}
+                >
+                  {REMINDER_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
             </>
           )}
 

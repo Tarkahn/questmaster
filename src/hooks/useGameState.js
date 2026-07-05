@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 const KEYS = {
   points: 'qm_points',
+  lifetimeXp: 'qm_lifetime_xp',
   coins: 'qm_coins',           // legacy balance key — kept for migration reads only
   coinsEarned: 'qm_coins_earned',
   coinsSpent:  'qm_coins_spent',
@@ -50,9 +51,13 @@ function mergeCoinLedger(local, drive) {
 // Takes two game state objects, returns the merged result.
 // Exported so Dashboard can compute the merge before touching Drive or React state.
 export function computeGameStateMerge(local, drive) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = new Date().toLocaleDateString('en-CA')
 
   const points     = Math.max(local.points || 0, drive.points || 0)
+  // lifetimeXp only ever goes up (see readLifetimeXp) — level and max-HP
+  // growth are derived from this, NOT from spendable `points`, so a penalty
+  // deduction can never delevel a player or shrink their max HP.
+  const lifetimeXp = Math.max(local.lifetimeXp || 0, drive.lifetimeXp || 0)
   const bestStreak = Math.max(local.bestStreak || 0, drive.bestStreak || 0)
 
   const { coinsEarned, coinsSpent, coins } = mergeCoinLedger(local, drive)
@@ -95,17 +100,17 @@ export function computeGameStateMerge(local, drive) {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-HISTORY_LIMIT)
 
-  return { points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history }
+  return { points, lifetimeXp, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history }
 }
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10)
+  return new Date().toLocaleDateString('en-CA')
 }
 
 function yesterdayStr() {
   const d = new Date()
   d.setDate(d.getDate() - 1)
-  return d.toISOString().slice(0, 10)
+  return d.toLocaleDateString('en-CA')
 }
 
 function loadClaimedEvents() {
@@ -128,10 +133,23 @@ function loadHistory() {
   }
 }
 
+// lifetimeXp only ever increases (level/max-HP growth key off it, never
+// points). Existing players have no history for it — bootstrap it from
+// their current points balance the first time this loads post-rollout, so
+// nobody is retroactively "delevel"'d by penalties they already took.
+function readLifetimeXp(points) {
+  const raw = localStorage.getItem(KEYS.lifetimeXp)
+  if (raw !== null) return Number(raw)
+  localStorage.setItem(KEYS.lifetimeXp, String(points))
+  return points
+}
+
 function load() {
   const { coinsEarned, coinsSpent, coins } = readCoinLedger()
+  const points = Number(localStorage.getItem(KEYS.points) || 0)
   return {
-    points: Number(localStorage.getItem(KEYS.points) || 0),
+    points,
+    lifetimeXp: readLifetimeXp(points),
     coins,
     coinsEarned,
     coinsSpent,
@@ -195,9 +213,10 @@ export function useGameState() {
     setState(prev => {
       const today     = todayStr()
       const yesterday = yesterdayStr()
-      let { points, streak, bestStreak, lastCompletedDate } = prev
+      let { points, lifetimeXp, streak, bestStreak, lastCompletedDate } = prev
 
       points += xp
+      lifetimeXp += xp
 
       if (lastCompletedDate === today) {
         // streak unchanged
@@ -215,12 +234,13 @@ export function useGameState() {
         xpEarned: s.xpEarned + xp,
         tasksCompleted: s.tasksCompleted + 1,
         xpTotal: points,
-        level: getLevel(points),
+        level: getLevel(lifetimeXp),
         streak,
       }))
 
-      const next = { ...prev, points, streak, bestStreak, lastCompletedDate, history }
+      const next = { ...prev, points, lifetimeXp, streak, bestStreak, lastCompletedDate, history }
       localStorage.setItem(KEYS.points, String(points))
+      localStorage.setItem(KEYS.lifetimeXp, String(lifetimeXp))
       localStorage.setItem(KEYS.streak, String(streak))
       localStorage.setItem(KEYS.bestStreak, String(bestStreak))
       localStorage.setItem(KEYS.lastCompletedDate, lastCompletedDate)
@@ -260,6 +280,7 @@ export function useGameState() {
   function claimEvent(eventId, xp, coins = 0) {
     setState(prev => {
       const points = prev.points + xp
+      const lifetimeXp = (prev.lifetimeXp || 0) + xp
       const prevClaims = prev.claimedEvents?.claims || {}
       const claimedEvents = {
         date: todayStr(),
@@ -271,13 +292,14 @@ export function useGameState() {
         xpEarned: s.xpEarned + xp,
         eventsClaimed: s.eventsClaimed + 1,
         xpTotal: points,
-        level: getLevel(points),
+        level: getLevel(lifetimeXp),
         streak: prev.streak,
       }))
       localStorage.setItem(KEYS.points, String(points))
+      localStorage.setItem(KEYS.lifetimeXp, String(lifetimeXp))
       localStorage.setItem(KEYS.claimedEvents, JSON.stringify(claimedEvents))
       localStorage.setItem(KEYS.history, JSON.stringify(history))
-      return { ...prev, points, claimedEvents, history }
+      return { ...prev, points, lifetimeXp, claimedEvents, history }
     })
   }
 
@@ -294,6 +316,7 @@ export function useGameState() {
         ...prev,
         ...merged,
         points:             Math.max(prev.points, merged.points),
+        lifetimeXp:         Math.max(prev.lifetimeXp || 0, merged.lifetimeXp || 0),
         coins,
         coinsEarned,
         coinsSpent,
@@ -303,6 +326,7 @@ export function useGameState() {
       }
 
       localStorage.setItem(KEYS.points, String(next.points))
+      localStorage.setItem(KEYS.lifetimeXp, String(next.lifetimeXp))
       saveCoinLedger(next.coinsEarned, next.coinsSpent)
       localStorage.setItem(KEYS.streak, String(next.streak))
       localStorage.setItem(KEYS.bestStreak, String(next.bestStreak))
@@ -314,15 +338,37 @@ export function useGameState() {
     })
   }
 
+  // Undoing an accidental completion reverses lifetimeXp too — this is
+  // correcting a mistake ("that was never really earned"), not a penalty,
+  // so it's the one case besides earning where lifetimeXp moves at all.
   function uncompleteTask(xp) {
     setState(prev => {
       const points = Math.max(0, prev.points - xp)
+      const lifetimeXp = Math.max(0, (prev.lifetimeXp || 0) - xp)
       const history = updateTodaySnapshot(prev.history, s => ({
         ...s,
         xpEarned: Math.max(0, s.xpEarned - xp),
         tasksCompleted: Math.max(0, s.tasksCompleted - 1),
         xpTotal: points,
-        level: getLevel(points),
+        level: getLevel(lifetimeXp),
+      }))
+      localStorage.setItem(KEYS.points, String(points))
+      localStorage.setItem(KEYS.lifetimeXp, String(lifetimeXp))
+      localStorage.setItem(KEYS.history, JSON.stringify(history))
+      return { ...prev, points, lifetimeXp, history }
+    })
+  }
+
+  // Penalty toll — deducts spendable points only. lifetimeXp (and therefore
+  // level and max HP) is untouched, by design: a bad night should never
+  // delevel a player or shrink their max HP on top of the HP/XP toll itself.
+  function deductXP(n) {
+    setState(prev => {
+      const points = Math.max(0, prev.points - n)
+      const history = updateTodaySnapshot(prev.history, s => ({
+        ...s,
+        xpTotal: points,
+        level: getLevel(prev.lifetimeXp || 0),
       }))
       localStorage.setItem(KEYS.points, String(points))
       localStorage.setItem(KEYS.history, JSON.stringify(history))
@@ -334,6 +380,7 @@ export function useGameState() {
     setState(prev => {
       const { xp = 0, coins: claimedCoins = 0 } = prev.claimedEvents?.claims?.[eventId] || {}
       const points = Math.max(0, prev.points - xp)
+      const lifetimeXp = Math.max(0, (prev.lifetimeXp || 0) - xp)
       // Model the reversal as spending so coinsSpent stays monotonically increasing
       const coinsSpent  = (prev.coinsSpent || 0) + claimedCoins
       const coins       = Math.max(0, (prev.coinsEarned || 0) - coinsSpent)
@@ -346,13 +393,14 @@ export function useGameState() {
         xpEarned: Math.max(0, s.xpEarned - xp),
         eventsClaimed: Math.max(0, s.eventsClaimed - 1),
         xpTotal: points,
-        level: getLevel(points),
+        level: getLevel(lifetimeXp),
       }))
       localStorage.setItem(KEYS.points, String(points))
+      localStorage.setItem(KEYS.lifetimeXp, String(lifetimeXp))
       saveCoinLedger(prev.coinsEarned || 0, coinsSpent)
       localStorage.setItem(KEYS.claimedEvents, JSON.stringify(claimedEvents))
       localStorage.setItem(KEYS.history, JSON.stringify(history))
-      return { ...prev, points, coins, coinsSpent, claimedEvents, history }
+      return { ...prev, points, lifetimeXp, coins, coinsSpent, claimedEvents, history }
     })
   }
 
@@ -360,6 +408,7 @@ export function useGameState() {
     Object.values(KEYS).forEach(k => localStorage.removeItem(k))
     setState({
       points: 0,
+      lifetimeXp: 0,
       coins: 0,
       coinsEarned: 0,
       coinsSpent: 0,
@@ -372,7 +421,9 @@ export function useGameState() {
   }
 
   const completedToday = state.lastCompletedDate === todayStr()
-  const { level, xpInto, xpNeeded, pct } = getLevelProgress(state.points)
+  // Level (and therefore max-HP growth) is derived from lifetimeXp, not the
+  // spendable points balance — see readLifetimeXp / deductXP.
+  const { level, xpInto, xpNeeded, pct } = getLevelProgress(state.lifetimeXp || 0)
 
   return {
     ...state,
@@ -383,6 +434,7 @@ export function useGameState() {
     xpPct: pct,
     completeTask,
     uncompleteTask,
+    deductXP,
     earnCoins,
     spendCoins,
     removeCoins,

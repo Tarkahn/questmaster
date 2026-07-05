@@ -49,6 +49,14 @@ export default defineConfig({
             urlPattern: /^\/api\//,
             handler: 'NetworkOnly',
           },
+          {
+            urlPattern: /^https:\/\/tile\.openstreetmap\.org\//,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /^https:\/\/tiles\.stadiamaps\.com\//,
+            handler: 'NetworkOnly',
+          },
         ],
       },
     }),

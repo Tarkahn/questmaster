@@ -39,7 +39,7 @@ function getState(item, character, coins) {
   return { type: 'locked' }
 }
 
-export default function ShopView({ character, coins, onBuy, onEquip, onUse, onSell, onBack, startCategory }) {
+export default function ShopView({ character, coins, onBuy, onEquip, onUnequip, onUse, onSell, onBack, startCategory }) {
   const [activeCategory, setActiveCategory] = useState(startCategory || 'weapon')
   const [showAll, setShowAll] = useState(false)
 
@@ -119,7 +119,7 @@ export default function ShopView({ character, coins, onBuy, onEquip, onUse, onSe
                 {(state.type === 'buy' || state.type === 'locked') && (
                   <span className="item-row-cost">🪙 {item.cost}</span>
                 )}
-                <PrimaryAction state={state} item={item} onBuy={onBuy} onEquip={onEquip} onUse={onUse} />
+                <PrimaryAction state={state} item={item} onBuy={onBuy} onEquip={onEquip} onUnequip={onUnequip} onUse={onUse} />
                 {'sellPrice' in state && (
                   <button className="item-btn item-btn--sell" onClick={() => onSell(item.id)}>
                     Sell {state.sellPrice}🪙
@@ -134,10 +134,10 @@ export default function ShopView({ character, coins, onBuy, onEquip, onUse, onSe
   )
 }
 
-function PrimaryAction({ state, item, onBuy, onEquip, onUse }) {
+function PrimaryAction({ state, item, onBuy, onEquip, onUnequip, onUse }) {
   switch (state.type) {
     case 'equipped':
-      return <span className="item-badge item-badge--equipped">✓ Equipped</span>
+      return <button className="item-btn item-btn--unequip" onClick={() => onUnequip(item.id)}>Unequip</button>
     case 'equip':
       return <button className="item-btn item-btn--equip" onClick={() => onEquip(item.id)}>Equip</button>
     case 'use':
