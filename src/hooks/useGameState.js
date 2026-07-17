@@ -116,11 +116,11 @@ function yesterdayStr() {
 function loadClaimedEvents() {
   try {
     const raw = localStorage.getItem(KEYS.claimedEvents)
-    if (!raw) return { date: todayStr(), ids: [] }
+    if (!raw) return { date: todayStr(), ids: [], claims: {} }
     const parsed = JSON.parse(raw)
-    return parsed.date === todayStr() ? parsed : { date: todayStr(), ids: [] }
+    return parsed.date === todayStr() ? parsed : { date: todayStr(), ids: [], claims: {} }
   } catch {
-    return { date: todayStr(), ids: [] }
+    return { date: todayStr(), ids: [], claims: {} }
   }
 }
 

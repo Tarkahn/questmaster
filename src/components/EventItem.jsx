@@ -3,7 +3,7 @@ import { TIER_INFO, cycleTier } from '../utils/difficulty'
 import { playDiceRoll, playDiceLand, playMissionClaim, playCoinEarn } from '../utils/audio'
 import { missionUrgency } from '../utils/urgency'
 
-export default function EventItem({ event, themedTitle, claimed, difficulty = 'normal', coinValue = 0, revealMs = 5000, onClaim, onUnclaim, onDifficultyChange, onEdit }) {
+export default function EventItem({ event, themedTitle, claimed, claimedXp = null, difficulty = 'normal', coinValue = 0, revealMs = 5000, onClaim, onUnclaim, onDifficultyChange, onEdit }) {
   const [phase, setPhase] = useState(claimed ? 'done' : 'idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
   const [earnedXP, setEarnedXP] = useState(null)
@@ -15,6 +15,25 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
     clearInterval(intervalRef.current)
     clearTimeout(revealTimerRef.current)
   }, [])
+
+  // Follow the claimed prop after mount so a claim (or unclaim) made on
+  // ANOTHER device — delivered by the Drive sync poll — updates an already-
+  // rendered row. Without this, `phase` only ever read `claimed` in its
+  // useState initializer, so the marker stayed stale until a full reload.
+  // Deliberately keyed on `claimed` alone: a local roll-in-progress
+  // (phase 'rolling') is left to finish its own animation, and the local
+  // claim/unclaim paths already set phase themselves before the prop flips.
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
+  useEffect(() => {
+    if (claimed && phaseRef.current === 'idle') {
+      setPhase('done')
+    } else if (!claimed && phaseRef.current === 'done') {
+      setPhase('idle')
+      setEarnedXP(null)
+      setDisplayNum(null)
+    }
+  }, [claimed])
 
   const isAllDay = Boolean(event.start?.date && !event.start?.dateTime)
   const tier = TIER_INFO[difficulty] || TIER_INFO.normal
@@ -88,7 +107,12 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
         </button>
       </div>
       <div className="event-content">
-        <div className="event-time">{timeLabel}</div>
+        <div className="event-time">
+          {timeLabel}
+          {event.recurringEventId && (
+            <span className="event-recurring-badge" title="Repeating mission" aria-label="Repeating mission">🔁</span>
+          )}
+        </div>
         <button
           type="button"
           className={`event-title${phase === 'done' ? ' event-title--done' : ''}${revealing ? ' event-title--original' : ''}${hasThemed ? ' event-title--flippable' : ''}`}
@@ -132,7 +156,9 @@ export default function EventItem({ event, themedTitle, claimed, difficulty = 'n
           aria-label="Unclaim mission"
         >↩</button>
       )}
-      {phase === 'done' && <span className="points-pop points-pop--rune">+{earnedXP} XP</span>}
+      {phase === 'done' && (earnedXP ?? claimedXp) != null && (
+        <span className="points-pop points-pop--rune">+{earnedXP ?? claimedXp} XP</span>
+      )}
       {phase === 'done' && coinValue > 0 && <span className="coins-pop coins-pop--rune">+{coinValue} 🪙</span>}
     </div>
   )
