@@ -1192,6 +1192,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 10px;
 }
 
@@ -2580,6 +2582,90 @@ body {
 .completed-row-restore:hover {
   color: var(--text);
   border-color: rgba(255,255,255,0.3);
+}
+
+/* ── Quest Notes (quick-jot backburner list) ── */
+
+.quest-note-add-btn {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.quest-note-draft-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.quest-note-draft-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.quest-note-draft-save,
+.quest-note-draft-cancel {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.quest-note-draft-save {
+  color: var(--accent-light);
+  border-color: var(--accent);
+}
+.quest-note-draft-save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.quest-note-draft-save:not(:disabled):hover {
+  background: rgba(124, 58, 237, 0.15);
+  color: var(--text);
+}
+.quest-note-draft-cancel:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.3);
+}
+
+.quest-note-row {
+  padding: 5px 0;
+}
+
+.quest-note-row-name {
+  text-decoration: none;
+  color: var(--text);
+}
+
+.quest-note-row-btn {
+  font-size: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.quest-note-row-convert:hover {
+  color: var(--accent-light);
+  border-color: var(--accent);
+  background: rgba(124, 58, 237, 0.15);
+}
+.quest-note-row-delete:hover {
+  color: var(--danger, #e05a5a);
+  border-color: rgba(224,90,90,0.4);
 }
 
 /* ── Mission unclaim button ── */

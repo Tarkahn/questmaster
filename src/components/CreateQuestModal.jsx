@@ -21,8 +21,8 @@ function matchPreset(days) {
   return 'Custom'
 }
 
-export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring, defaultReminderMinutes = 30 }) {
-  const [title, setTitle]               = useState('')
+export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring, defaultReminderMinutes = 30, initialTitle = '' }) {
+  const [title, setTitle]               = useState(initialTitle)
   const [due, setDue]                   = useState('')
   const [dueTime, setDueTime]           = useState('09:00')
   const [showTime, setShowTime]         = useState(false)

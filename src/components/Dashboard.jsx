@@ -105,7 +105,14 @@ export default function Dashboard({ token, onSignOut }) {
   const [habits, setHabits] = useState(() => loadHabits())
   const [showCreateHabit, setShowCreateHabit] = useState(false)
   const [showCreateQuest, setShowCreateQuest] = useState(false)
+  const [createQuestInitialTitle, setCreateQuestInitialTitle] = useState('')
   const [showCreateMission, setShowCreateMission] = useState(false)
+  const [questNotes, setQuestNotes] = useState(() => readJson('qm_quest_notes', []))
+  // Always starts collapsed — this is a quick-jot scratch list, not persisted
+  // open/closed state, so it never eats screen space unless asked to.
+  const [showQuestNotes, setShowQuestNotes] = useState(false)
+  const [addingQuestNote, setAddingQuestNote] = useState(false)
+  const [questNoteDraft, setQuestNoteDraft] = useState('')
   const [editingTask, setEditingTask] = useState(null)
   const [checklistTask, setChecklistTask] = useState(null)
   const [editingSubtask, setEditingSubtask] = useState(null) // { sub, parentId }
@@ -1160,6 +1167,7 @@ export default function Dashboard({ token, onSignOut }) {
         })
       }
       setShowCreateQuest(false)
+      setCreateQuestInitialTitle('')
       setToast(`⚔️ Quest summoned: ${data.title}`)
       loadTasksAndEvents()
     } finally {
@@ -1170,6 +1178,39 @@ export default function Dashboard({ token, onSignOut }) {
   function handleCreateRecurringFromModal({ title, notes, days, dueTime, reminderMinutes }) {
     handleCreateRecurring({ title, notes, days, dueTime, reminderMinutes })
     setShowCreateQuest(false)
+  }
+
+  // Quest Notes — a local-only scratch list for backburner ideas that
+  // shouldn't cost XP/HP or show up in the live quest lineup yet. Never
+  // synced to Google Tasks; just localStorage until converted or deleted.
+  function addQuestNote(title) {
+    const trimmed = title.trim()
+    if (!trimmed) return
+    setQuestNotes(prev => {
+      const next = [...prev, { id: `note_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, title: trimmed }]
+      writeJson('qm_quest_notes', next)
+      return next
+    })
+  }
+
+  function deleteQuestNote(id) {
+    setQuestNotes(prev => {
+      const next = prev.filter(n => n.id !== id)
+      writeJson('qm_quest_notes', next)
+      return next
+    })
+  }
+
+  function convertQuestNoteToQuest(note) {
+    deleteQuestNote(note.id)
+    setCreateQuestInitialTitle(note.title)
+    setShowCreateQuest(true)
+  }
+
+  function submitQuestNoteDraft() {
+    addQuestNote(questNoteDraft)
+    setQuestNoteDraft('')
+    setAddingQuestNote(false)
   }
 
   async function handleCreateMission(data) {
@@ -1581,10 +1622,11 @@ export default function Dashboard({ token, onSignOut }) {
       )}
       {showCreateQuest && (
         <CreateQuestModal
-          onClose={() => setShowCreateQuest(false)}
+          onClose={() => { setShowCreateQuest(false); setCreateQuestInitialTitle('') }}
           onCreate={handleCreateQuest}
           onCreateRecurring={handleCreateRecurringFromModal}
           defaultReminderMinutes={settings.defaultReminderMinutes}
+          initialTitle={createQuestInitialTitle}
         />
       )}
       {showCreateMission && (
@@ -1865,10 +1907,40 @@ export default function Dashboard({ token, onSignOut }) {
                   {theming && <span className="theming-badge">✨ Enchanting...</span>}
                 </h2>
                 <HelpButton topic="quests" onHelp={setHelpTopic} />
+                <button
+                  className="add-habit-btn quest-note-add-btn"
+                  onClick={() => setAddingQuestNote(v => !v)}
+                  title="Jot a quick quest idea for later — no XP/HP, not in the lineup yet"
+                >
+                  + Note
+                </button>
                 <button className="add-habit-btn" onClick={() => setShowCreateQuest(true)}>
                   + New Quest
                 </button>
               </div>
+
+              {addingQuestNote && (
+                <form
+                  className="quest-note-draft-row"
+                  onSubmit={e => { e.preventDefault(); submitQuestNoteDraft() }}
+                >
+                  <input
+                    type="text"
+                    className="form-input quest-note-draft-input"
+                    value={questNoteDraft}
+                    onChange={e => setQuestNoteDraft(e.target.value)}
+                    placeholder="Quick idea for later…"
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Escape') { setAddingQuestNote(false); setQuestNoteDraft('') } }}
+                  />
+                  <button type="submit" className="quest-note-draft-save" disabled={!questNoteDraft.trim()}>Add</button>
+                  <button
+                    type="button"
+                    className="quest-note-draft-cancel"
+                    onClick={() => { setAddingQuestNote(false); setQuestNoteDraft('') }}
+                  >✕</button>
+                </form>
+              )}
               {tasks.length === 0 && completedTasks.length === 0
                 ? <p className="empty">No quests today — your Google Tasks for today will appear here. Tap <strong>+ New Quest</strong> to create one.</p>
                 : (
@@ -1924,6 +1996,34 @@ export default function Dashboard({ token, onSignOut }) {
                   </DragDropContext>
                 )
               }
+
+              {questNotes.length > 0 && (
+                <div className="completed-section">
+                  <button
+                    className="completed-section-header recurring-section-header--btn"
+                    onClick={() => setShowQuestNotes(v => !v)}
+                  >
+                    <span className="completed-section-label" style={{ color: 'var(--accent-light)' }}>📝 Quest Notes</span>
+                    <span className="completed-section-count" style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--accent-light)' }}>{questNotes.length}</span>
+                    <span className="recurring-chevron">{showQuestNotes ? '▲' : '▼'}</span>
+                  </button>
+                  {showQuestNotes && questNotes.map(note => (
+                    <div key={note.id} className="completed-row quest-note-row">
+                      <span className="completed-row-name quest-note-row-name">{note.title}</span>
+                      <button
+                        className="quest-note-row-btn quest-note-row-convert"
+                        onClick={() => convertQuestNoteToQuest(note)}
+                        title="Turn into a real quest"
+                      >⚔️</button>
+                      <button
+                        className="quest-note-row-btn quest-note-row-delete"
+                        onClick={() => deleteQuestNote(note.id)}
+                        title="Delete note"
+                      >✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {completedTasks.length > 0 && (
                 <div className="completed-section">
