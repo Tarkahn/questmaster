@@ -5,7 +5,7 @@ import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
 import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, loadRecurringFromDrive, saveRecurringToDrive, loadTaskOrderFromDrive, saveTaskOrderToDrive, loadStats, loadLocations, loadPenaltyLedger, savePenaltyLedger, loadRumorsFromDrive, saveRumorsToDrive } from '../utils/driveSync'
-import { loadLedger, saveLedger, recordMissions, resolveMission, runPenaltyPass, dueChangePenalty, mergeLedgers, recurringMissPenalty } from '../utils/penalties'
+import { loadLedger, saveLedger, recordMissions, resolveMission, runPenaltyPass, dueChangePenalty, mergeLedgers, recurringMissPenalty, todayStr } from '../utils/penalties'
 import { loadRecurring, loadRecurringMeta, saveRecurring, saveRecurringRaw, createRecurringDef, getDueToday, markMaterialized, scheduleLabel, setLastTaskId, recordCompletion, recordMiss } from '../utils/recurring'
 import { loadRumors, loadRumorsMeta, saveRumors, saveRumorsRaw, createRumor } from '../utils/rumors'
 import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, computeAutoSortOrder, reorderIds } from '../utils/taskOrder'
@@ -115,6 +115,14 @@ export default function Dashboard({ token, onSignOut }) {
   const [editingEvent, setEditingEvent] = useState(null)
   const [taskSeenMap, setTaskSeenMap] = useState(() => readJson('qm_task_seen', {}))
   const [penaltyReport, setPenaltyReport] = useState(null)
+  // Per-card toll indicators — same numbers as penaltyReport's `lines`, just
+  // keyed by task/subtask id so each quest card can show its own day's cost.
+  // Local-only and re-derived from scratch every sweep; only ever meaningful
+  // for "today" so a stale date in storage is discarded on load.
+  const [penaltyByItem, setPenaltyByItem] = useState(() => {
+    const saved = readJson('qm_last_penalty', null)
+    return saved?.date === todayStr() ? saved.perItem : {}
+  })
   const penaltyLedgerRef = useRef(loadLedger())
   const penaltyRunningRef = useRef(false)
   const levelUpRunningRef = useRef(false)
@@ -161,7 +169,7 @@ export default function Dashboard({ token, onSignOut }) {
   const [helpTopic, setHelpTopic] = useState(null)
 
   const {
-    points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, completedToday,
+    points, lifetimeXp, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, completedToday,
     level, xpInto, xpNeeded, xpPct,
     claimedEvents, completeTask, uncompleteTask, deductXP, earnCoins, spendCoins,
     removeCoins, claimEvent, unclaimEvent,
@@ -181,9 +189,13 @@ export default function Dashboard({ token, onSignOut }) {
   const bgmGainRef = useRef(null)  // GainNode — audio.volume is read-only on iOS
   const bgmVolumeRef = useRef(settings.musicVolume ?? 0.3)
   const prevLevelRef = useRef(null)
-  const gameStateRef = useRef({ points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history })
+  // lifetimeXp MUST be in this payload: the level/XP-bar display derives from
+  // lifetimeXp (not spendable points), and computeGameStateMerge Math.max-es
+  // it — omitting it here meant Drive never carried it, so each device only
+  // counted XP earned locally and their XP bars permanently diverged.
+  const gameStateRef = useRef({ points, lifetimeXp, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history })
   useEffect(() => {
-    gameStateRef.current = { points, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history }
+    gameStateRef.current = { points, lifetimeXp, coins, coinsEarned, coinsSpent, streak, bestStreak, lastCompletedDate, claimedEvents, history }
   })
   const handleSignOut = useCallback(onSignOut, [onSignOut])
 
@@ -425,6 +437,27 @@ export default function Dashboard({ token, onSignOut }) {
         saveRumorsToDrive(token, localRumors)
       }
 
+      // One-time migration: fold notes from the retired "Quest Notes" feature
+      // (qm_quest_notes, local-only, never Drive-synced) into Rumors. Runs
+      // after the LWW reconciliation above so it merges into the authoritative
+      // list, then removes the old key so it never repeats.
+      try {
+        const legacyNotes = JSON.parse(localStorage.getItem('qm_quest_notes') || 'null')
+        if (Array.isArray(legacyNotes) && legacyNotes.length > 0) {
+          const current = loadRumorsMeta().items
+          const have = new Set(current.map(r => r.text))
+          const converted = legacyNotes
+            .filter(n => n.title && !have.has(n.title))
+            .map((n, i) => ({ id: `rm_${Date.now()}_${i}`, text: n.title, createdAt: new Date().toLocaleDateString('en-CA') }))
+          if (converted.length > 0) {
+            const merged = [...current, ...converted]
+            setRumors(merged)
+            saveRumorsToDrive(token, saveRumors(merged))
+          }
+          localStorage.removeItem('qm_quest_notes')
+        }
+      } catch {}
+
       // Stats + contribution history — reconciled in the useStats hook.
       mergeStats(driveStats, driveStatHistory)
       mergeLocations(driveLocations)
@@ -484,14 +517,14 @@ export default function Dashboard({ token, onSignOut }) {
   const prevPointsRef = useRef(null)
   useEffect(() => {
     if (prevPointsRef.current === null) {
-      prevPointsRef.current = points
+      prevPointsRef.current = { points, lifetimeXp }
       return
     }
-    if (points !== prevPointsRef.current) {
-      prevPointsRef.current = points
+    if (points !== prevPointsRef.current.points || lifetimeXp !== prevPointsRef.current.lifetimeXp) {
+      prevPointsRef.current = { points, lifetimeXp }
       saveGameStateToDrive(token, gameStateRef.current)
     }
-  }, [points])
+  }, [points, lifetimeXp])
 
   useEffect(() => {
     if (!showMenu) return
@@ -528,6 +561,10 @@ export default function Dashboard({ token, onSignOut }) {
       if (ledgerChanged) {
         saveLedger(ledger)
         savePenaltyLedger(token, ledger)
+      }
+      if (result.ranDaily) {
+        writeJson('qm_last_penalty', { date: todayStr(), perItem: result.perItem })
+        setPenaltyByItem(result.perItem)
       }
 
       if (result.xpLost > 0) deductXP(result.xpLost)
@@ -751,6 +788,30 @@ export default function Dashboard({ token, onSignOut }) {
   }, [token, glossary, settings.sendNotesToLlm, settings.missionLookAhead, character?.equippedItems, handleSignOut])
 
   useEffect(() => { loadTasksAndEvents() }, [loadTasksAndEvents])
+
+  // Refetch quests + missions when the user returns to a long-idle tab.
+  // The 15s Drive poll only covers game/app state — the Google Tasks/Calendar
+  // lists themselves were fetched once on mount, so a tab left open overnight
+  // (or while items were added on another device) showed a stale list forever.
+  // Gated to ≥5 min since the last load so quick tab switches don't hammer the
+  // APIs or re-trigger LLM theming.
+  const lastLoadRef = useRef(Date.now())
+  useEffect(() => { lastLoadRef.current = Date.now() }, [loadTasksAndEvents])
+  useEffect(() => {
+    const STALE_MS = 5 * 60 * 1000
+    function refetchIfStale() {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - lastLoadRef.current < STALE_MS) return
+      lastLoadRef.current = Date.now()
+      loadTasksAndEvents()
+    }
+    document.addEventListener('visibilitychange', refetchIfStale)
+    window.addEventListener('focus', refetchIfStale)
+    return () => {
+      document.removeEventListener('visibilitychange', refetchIfStale)
+      window.removeEventListener('focus', refetchIfStale)
+    }
+  }, [loadTasksAndEvents])
 
   // When recurring defs arrive from Drive (after syncFromDrive finishes),
   // loadTasksAndEvents may have already built its allItems list without them.
@@ -1270,11 +1331,14 @@ export default function Dashboard({ token, onSignOut }) {
     loadTasksAndEvents()
   }
 
-  async function handleDeleteEvent(eventId) {
+  // eventId is either a single event/instance id, or — when deleting a whole
+  // recurring series — the series master's id (the instance's recurringEventId).
+  // The filter drops both the id itself and any listed instances of that series.
+  async function handleDeleteEvent(eventId, { series = false } = {}) {
     await deleteEvent(token, eventId)
     setEditingEvent(null)
-    setEvents(prev => prev.filter(e => e.id !== eventId))
-    setToast('🗑 Mission removed.')
+    setEvents(prev => prev.filter(e => e.id !== eventId && e.recurringEventId !== eventId))
+    setToast(series ? '🗑 Mission and all its repeats removed.' : '🗑 Mission removed.')
   }
 
   function getEffectiveDifficulty(id) {
@@ -1566,6 +1630,7 @@ export default function Dashboard({ token, onSignOut }) {
       event={event}
       themedTitle={themedTitles[event.id]}
       claimed={isEventClaimed(event.id)}
+      claimedXp={claimedEvents?.claims?.[event.id]?.xp ?? null}
       difficulty={getEffectiveDifficulty(event.id)}
       coinValue={applyRangerMissionBonus(BASE_COIN_VALUE[getEffectiveDifficulty(event.id)] || BASE_COIN_VALUE.normal, character.class) + getItemMissionBonus(character)}
       revealMs={settings.revealMs || 5000}
@@ -1942,6 +2007,8 @@ export default function Dashboard({ token, onSignOut }) {
                                     onOpenChecklist={() => setChecklistTask(task)}
                                     dragHandleProps={(settings.autoSort || task.due) ? null : dragProvided.dragHandleProps}
                                     isDated={Boolean(task.due)}
+                                    penaltyByItem={penaltyByItem}
+                                    cardIndex={index}
                                   />
                                 </div>
                               )}

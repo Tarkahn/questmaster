@@ -196,7 +196,9 @@ export function recurringMissPenalty({ count, hardMode, character }) {
 }
 
 // ── the sweep ─────────────────────────────────────────────────────────────────
-// Returns { ledger, hpLost, xpLost, lines, atZeroXp, ranDaily, died:false }.
+// Returns { ledger, hpLost, xpLost, lines, perItem, atZeroXp, ranDaily, died:false }.
+// `perItem` is { [taskOrSubtaskId]: {hp, xp} } — the same per-quest numbers
+// baked into `lines`, exposed individually so a quest card can show its own toll.
 // `died` is filled in by the caller after damagePlayer reports reincarnation.
 export function runPenaltyPass({ tasks = [], subtasks = [], habits = [], character, settings = {}, ledger, points = 0, difficultyMemory = {} }) {
   const hardMode = !!settings.hardMode
@@ -209,6 +211,10 @@ export function runPenaltyPass({ tasks = [], subtasks = [], habits = [], charact
   let hpLost = 0
   let xpLost = 0
   let next = { ...ledger, missions: { ...ledger.missions } }
+  // Per-card breakdown — same {hp, xp} numbers as the aggregated `lines`
+  // above, just keyed by task/subtask id so each quest card can show its own
+  // day's toll instead of only the category total.
+  const perItem = {}
 
   const ranDaily = ledger.lastSweepDate !== today
   if (ranDaily) {
@@ -226,14 +232,17 @@ export function runPenaltyPass({ tasks = [], subtasks = [], habits = [], charact
       for (const it of items) {
         const tier = getDifficulty(it.id, difficultyMemory) || 'normal'
         const diffMult = PENALTY_CONFIG.difficultyPenaltyMult[tier] ?? 1
-        hp += applyResist(roll(PENALTY_CONFIG.benignHpDie) * hardMult * diffMult, resist.hp)
+        let itemHp = applyResist(roll(PENALTY_CONFIG.benignHpDie) * hardMult * diffMult, resist.hp)
+        let itemXp = 0
         const dl = daysLate(it.due, todayMs)
         if (it.due && dl >= 1) {
           lateCount++
           const ramp = Math.min(dl, PENALTY_CONFIG.overdueRampMax)
-          hp += applyResist(roll(PENALTY_CONFIG.overdueRampHpDie) * ramp * hardMult * diffMult, resist.hp)
-          xp += applyResist(roll(PENALTY_CONFIG.overdueRampXpDie) * ramp * hardMult * diffMult, resist.xp)
+          itemHp += applyResist(roll(PENALTY_CONFIG.overdueRampHpDie) * ramp * hardMult * diffMult, resist.hp)
+          itemXp += applyResist(roll(PENALTY_CONFIG.overdueRampXpDie) * ramp * hardMult * diffMult, resist.xp)
         }
+        hp += itemHp; xp += itemXp
+        perItem[it.id] = { hp: itemHp, xp: itemXp }
       }
       dailyHp += hp; xpLost += xp
       lines.push({ icon, label: `${label} (${items.length}${lateCount ? `, ${lateCount} overdue` : ''})`, hp, xp })
@@ -265,6 +274,7 @@ export function runPenaltyPass({ tasks = [], subtasks = [], habits = [], charact
       // rather than silently dropping the excess from one arbitrary line.
       const scale = PENALTY_CONFIG.maxDailyHpLoss / dailyHp
       for (const line of lines) line.hp = Math.round(line.hp * scale)
+      for (const id of Object.keys(perItem)) perItem[id].hp = Math.round(perItem[id].hp * scale)
       dailyHp = PENALTY_CONFIG.maxDailyHpLoss
     }
     hpLost += dailyHp
@@ -287,5 +297,5 @@ export function runPenaltyPass({ tasks = [], subtasks = [], habits = [], charact
   }
 
   const atZeroXp = xpLost > 0 && (points - xpLost) <= 0
-  return { ledger: next, hpLost, xpLost, lines, atZeroXp, ranDaily, died: false }
+  return { ledger: next, hpLost, xpLost, lines, perItem, atZeroXp, ranDaily, died: false }
 }

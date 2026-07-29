@@ -1,51 +1,9 @@
-import { useEffect, useRef } from 'react'
-
 // Public landing page shown at "/" for signed-out visitors. Doubles as the
 // Google OAuth verification home page (app name, description, privacy link)
-// and the sign-in entry point — the button below fires the real Google OAuth
-// flow directly, with no separate intermediate screen.
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
-const SCOPES = [
-  'https://www.googleapis.com/auth/tasks',
-  'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/drive.appdata',
-  'email',
-  'profile',
-].join(' ')
-
-export default function Landing({ onSignIn }) {
-  const clientRef = useRef(null)
-
-  useEffect(() => {
-    function initClient() {
-      clientRef.current = window.google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: SCOPES,
-        callback: (response) => {
-          if (response.access_token) {
-            onSignIn(response.access_token, response.expires_in)
-          }
-        },
-      })
-    }
-
-    if (window.google) {
-      initClient()
-    } else {
-      const interval = setInterval(() => {
-        if (window.google) {
-          clearInterval(interval)
-          initClient()
-        }
-      }, 100)
-      return () => clearInterval(interval)
-    }
-  }, [onSignIn])
-
-  function handleClick() {
-    clientRef.current?.requestAccessToken()
-  }
-
+// and the sign-in entry point. The Google token client itself lives in
+// useGoogleAuth (owned by App) so the same client can silently renew the
+// token later — this component just fires the flow via onClick.
+export default function Landing({ onClick }) {
   return (
     <div className="signin-screen">
       <div className="signin-card landing-card">
@@ -60,7 +18,7 @@ export default function Landing({ onSignIn }) {
           suggest subtask breakdowns, while your progress syncs privately across devices
           through your Google Drive.
         </p>
-        <button className="signin-btn" onClick={handleClick}>
+        <button className="signin-btn" onClick={onClick}>
           Sign in with Google
         </button>
         <a className="signin-privacy-link" href="/privacy.html" target="_blank" rel="noopener noreferrer">

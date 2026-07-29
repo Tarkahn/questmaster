@@ -234,10 +234,15 @@ function buildRemindersField(reminderMinutes) {
   return { useDefault: false, overrides: [{ method: 'popup', minutes: reminderMinutes }] }
 }
 
-export async function createEvent(token, { title, date, start, end, allDay, notes, isCompanion, reminderMinutes }) {
+// recurrence: optional array of RFC 5545 strings (e.g. ['RRULE:FREQ=WEEKLY;BYDAY=MO'])
+// — Google expands these into instances server-side; fetchUpcomingEvents
+// already requests singleEvents=true so each occurrence arrives as its own
+// event (with a `recurringEventId` back-pointer to the series).
+export async function createEvent(token, { title, date, start, end, allDay, notes, isCompanion, reminderMinutes, recurrence }) {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const body = { summary: title }
   if (notes) body.description = notes
+  if (recurrence && recurrence.length > 0) body.recurrence = recurrence
   if (isCompanion) body.extendedProperties = { private: { qm_companion: 'true' } }
   const reminders = buildRemindersField(reminderMinutes)
   if (reminders) body.reminders = reminders
@@ -248,6 +253,12 @@ export async function createEvent(token, { title, date, start, end, allDay, note
     endDate.setDate(endDate.getDate() + 1)
     body.start = { date }
     body.end = { date: endDate.toISOString().slice(0, 10) }
+    // Google requires start/end timeZone on recurring events — it defines the
+    // zone the RRULE is expanded in.
+    if (body.recurrence) {
+      body.start.timeZone = timeZone
+      body.end.timeZone = timeZone
+    }
   } else {
     body.start = { dateTime: `${date}T${start}:00`, timeZone }
     body.end   = { dateTime: `${date}T${end}:00`,   timeZone }

@@ -30,6 +30,10 @@ function localTime(dt) {
 
 export default function EditMissionModal({ event, onClose, onSave, onDelete, defaultReminderMinutes = 30 }) {
   const isAllDay = Boolean(event.start?.date && !event.start?.dateTime)
+  // Instances of a recurring mission carry a back-pointer to their series.
+  // Edits PATCH the instance only (creating a Google Calendar exception);
+  // deletion offers a choice between this occurrence and the whole series.
+  const isRecurring = Boolean(event.recurringEventId)
 
   const [title, setTitle] = useState(event.summary || '')
   const [date, setDate] = useState(
@@ -75,11 +79,12 @@ export default function EditMissionModal({ event, onClose, onSave, onDelete, def
     }
   }
 
-  async function handleDelete() {
+  async function handleDelete(scope) {
     if (!confirmDelete) { setConfirmDelete(true); return }
     setDeleting(true)
     try {
-      await onDelete(event.id)
+      if (scope === 'series') await onDelete(event.recurringEventId, { series: true })
+      else await onDelete(event.id)
     } catch (err) {
       setError(err.message || 'Could not delete mission.')
       setDeleting(false)
@@ -90,6 +95,9 @@ export default function EditMissionModal({ event, onClose, onSave, onDelete, def
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card" onClick={e => e.stopPropagation()}>
         <h2 className="modal-title">✏️ Edit Mission</h2>
+        {isRecurring && (
+          <p className="modal-subtitle">🔁 Repeating mission — changes apply only to this occurrence.</p>
+        )}
 
         <form onSubmit={handleSubmit} className="quest-form">
           <label className="form-label">
@@ -157,14 +165,35 @@ export default function EditMissionModal({ event, onClose, onSave, onDelete, def
           {error && <div className="error">{error}</div>}
 
           <div className="modal-actions">
-            <button
-              type="button"
-              className={`modal-btn modal-btn--delete${confirmDelete ? ' modal-btn--confirm' : ''}`}
-              onClick={handleDelete}
-              disabled={saving || deleting}
-            >
-              {deleting ? 'Deleting…' : confirmDelete ? 'Confirm?' : '🗑 Delete'}
-            </button>
+            {isRecurring && confirmDelete && !deleting ? (
+              <div className="recur-delete-choice">
+                <button
+                  type="button"
+                  className="modal-btn modal-btn--delete modal-btn--confirm"
+                  onClick={() => handleDelete('single')}
+                  disabled={saving}
+                >
+                  This one
+                </button>
+                <button
+                  type="button"
+                  className="modal-btn modal-btn--delete modal-btn--confirm"
+                  onClick={() => handleDelete('series')}
+                  disabled={saving}
+                >
+                  All repeats
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className={`modal-btn modal-btn--delete${confirmDelete ? ' modal-btn--confirm' : ''}`}
+                onClick={() => handleDelete('single')}
+                disabled={saving || deleting}
+              >
+                {deleting ? 'Deleting…' : confirmDelete ? 'Confirm?' : '🗑 Delete'}
+              </button>
+            )}
             <div className="modal-actions-right">
               <button type="button" className="modal-btn modal-btn--cancel" onClick={onClose} disabled={saving || deleting}>
                 Cancel
