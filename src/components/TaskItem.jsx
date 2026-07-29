@@ -26,6 +26,8 @@ export default function TaskItem({
   onDelete,
   dragHandleProps,
   isDated = false,
+  penaltyByItem,
+  cardIndex = 0,
 }) {
   const [phase, setPhase] = useState('idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
@@ -41,6 +43,7 @@ export default function TaskItem({
   }, [])
 
   const tier = TIER_INFO[difficulty] || TIER_INFO.normal
+  const penalty = penaltyByItem?.[task.id]
   const subCount = subtasks.length
   // Subtasks only show the urgency bar when they have an explicit due date —
   // the staleness fallback is meaningless for steps under a parent quest.
@@ -151,6 +154,15 @@ export default function TaskItem({
             >
               {tier.emoji} {tier.label}{tier.d20Bonus > 0 ? ` +${tier.d20Bonus}` : ''}
             </button>
+            {penalty && (penalty.hp > 0 || penalty.xp > 0) && (
+              <span
+                className="penalty-indicator"
+                style={{ animationDelay: `${cardIndex * 90}ms` }}
+                title="Today's toll for this quest"
+              >
+                🩸 {penalty.hp > 0 ? `−${penalty.hp}❤️` : ''}{penalty.hp > 0 && penalty.xp > 0 ? ' ' : ''}{penalty.xp > 0 ? `−${penalty.xp}✦` : ''}
+              </span>
+            )}
             {phase === 'idle' && !isSub && onEdit && (
               <button
                 type="button"
@@ -246,6 +258,8 @@ export default function TaskItem({
                             onDelete={() => onDeleteSubtask(task.id, sub.id)}
                             taskSeenMap={taskSeenMap}
                             dragHandleProps={isDatedSub ? null : dragProvided.dragHandleProps}
+                            penaltyByItem={penaltyByItem}
+                            cardIndex={cardIndex}
                           />
                         </div>
                       )}

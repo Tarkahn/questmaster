@@ -5,7 +5,7 @@ import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
 import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, loadRecurringFromDrive, saveRecurringToDrive, loadTaskOrderFromDrive, saveTaskOrderToDrive, loadStats, loadLocations, loadPenaltyLedger, savePenaltyLedger } from '../utils/driveSync'
-import { loadLedger, saveLedger, recordMissions, resolveMission, runPenaltyPass, dueChangePenalty, mergeLedgers, recurringMissPenalty } from '../utils/penalties'
+import { loadLedger, saveLedger, recordMissions, resolveMission, runPenaltyPass, dueChangePenalty, mergeLedgers, recurringMissPenalty, todayStr } from '../utils/penalties'
 import { loadRecurring, loadRecurringMeta, saveRecurring, saveRecurringRaw, createRecurringDef, getDueToday, markMaterialized, scheduleLabel, setLastTaskId, recordCompletion, recordMiss } from '../utils/recurring'
 import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, computeAutoSortOrder, reorderIds } from '../utils/taskOrder'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
@@ -119,6 +119,14 @@ export default function Dashboard({ token, onSignOut }) {
   const [editingEvent, setEditingEvent] = useState(null)
   const [taskSeenMap, setTaskSeenMap] = useState(() => readJson('qm_task_seen', {}))
   const [penaltyReport, setPenaltyReport] = useState(null)
+  // Per-card toll indicators — same numbers as penaltyReport's `lines`, just
+  // keyed by task/subtask id so each quest card can show its own day's cost.
+  // Local-only and re-derived from scratch every sweep; only ever meaningful
+  // for "today" so a stale date in storage is discarded on load.
+  const [penaltyByItem, setPenaltyByItem] = useState(() => {
+    const saved = readJson('qm_last_penalty', null)
+    return saved?.date === todayStr() ? saved.perItem : {}
+  })
   const penaltyLedgerRef = useRef(loadLedger())
   const penaltyRunningRef = useRef(false)
   const levelUpRunningRef = useRef(false)
@@ -520,6 +528,10 @@ export default function Dashboard({ token, onSignOut }) {
       if (ledgerChanged) {
         saveLedger(ledger)
         savePenaltyLedger(token, ledger)
+      }
+      if (result.ranDaily) {
+        writeJson('qm_last_penalty', { date: todayStr(), perItem: result.perItem })
+        setPenaltyByItem(result.perItem)
       }
 
       if (result.xpLost > 0) deductXP(result.xpLost)
@@ -1984,6 +1996,8 @@ export default function Dashboard({ token, onSignOut }) {
                                     onOpenChecklist={() => setChecklistTask(task)}
                                     dragHandleProps={(settings.autoSort || task.due) ? null : dragProvided.dragHandleProps}
                                     isDated={Boolean(task.due)}
+                                    penaltyByItem={penaltyByItem}
+                                    cardIndex={index}
                                   />
                                 </div>
                               )}
