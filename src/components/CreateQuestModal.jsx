@@ -21,8 +21,8 @@ function matchPreset(days) {
   return 'Custom'
 }
 
-export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring, defaultReminderMinutes = 30 }) {
-  const [title, setTitle]               = useState('')
+export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring, defaultReminderMinutes = 30, initialData = null }) {
+  const [title, setTitle]               = useState(initialData?.title || '')
   const [due, setDue]                   = useState('')
   const [dueTime, setDueTime]           = useState('09:00')
   const [showTime, setShowTime]         = useState(false)
@@ -30,7 +30,7 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring,
   const [recurringTime, setRecurringTime] = useState('09:00')
   const [showRecurringTime, setShowRecurringTime] = useState(false)
   const [recurringReminderMinutes, setRecurringReminderMinutes] = useState(defaultReminderMinutes)
-  const [notes, setNotes]               = useState('')
+  const [notes, setNotes]               = useState(initialData?.notes || '')
   const [saving, setSaving]             = useState(false)
   const [error, setError]               = useState(null)
   const [repeats, setRepeats]           = useState(false)
@@ -87,7 +87,11 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring,
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card" onClick={e => e.stopPropagation()}>
         <h2 className="modal-title">⚔️ New Quest</h2>
-        <p className="modal-subtitle">Adds a task to Google Tasks. The scribe will theme it next.</p>
+        <p className="modal-subtitle">
+          {initialData
+            ? 'Turning your rumor into a real quest — add a due date and difficulty below.'
+            : 'Adds a task to Google Tasks. The scribe will theme it next.'}
+        </p>
 
         <form onSubmit={handleSubmit} className="quest-form">
           <label className="form-label">

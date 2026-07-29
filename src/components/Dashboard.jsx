@@ -4,9 +4,10 @@ import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
-import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, loadRecurringFromDrive, saveRecurringToDrive, loadTaskOrderFromDrive, saveTaskOrderToDrive, loadStats, loadLocations, loadPenaltyLedger, savePenaltyLedger } from '../utils/driveSync'
+import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, loadRecurringFromDrive, saveRecurringToDrive, loadTaskOrderFromDrive, saveTaskOrderToDrive, loadStats, loadLocations, loadPenaltyLedger, savePenaltyLedger, loadRumorsFromDrive, saveRumorsToDrive } from '../utils/driveSync'
 import { loadLedger, saveLedger, recordMissions, resolveMission, runPenaltyPass, dueChangePenalty, mergeLedgers, recurringMissPenalty } from '../utils/penalties'
 import { loadRecurring, loadRecurringMeta, saveRecurring, saveRecurringRaw, createRecurringDef, getDueToday, markMaterialized, scheduleLabel, setLastTaskId, recordCompletion, recordMiss } from '../utils/recurring'
+import { loadRumors, loadRumorsMeta, saveRumors, saveRumorsRaw, createRumor } from '../utils/rumors'
 import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, computeAutoSortOrder, reorderIds } from '../utils/taskOrder'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
@@ -105,6 +106,8 @@ export default function Dashboard({ token, onSignOut }) {
   const [habits, setHabits] = useState(() => loadHabits())
   const [showCreateHabit, setShowCreateHabit] = useState(false)
   const [showCreateQuest, setShowCreateQuest] = useState(false)
+  const [createQuestInitialData, setCreateQuestInitialData] = useState(null)
+  const [convertingRumorId, setConvertingRumorId] = useState(null)
   const [showCreateMission, setShowCreateMission] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [checklistTask, setChecklistTask] = useState(null)
@@ -132,6 +135,9 @@ export default function Dashboard({ token, onSignOut }) {
   const [showBossJournal, setShowBossJournal] = useState(false)
   const [recurring, setRecurring] = useState(() => loadRecurring())
   const [showRecurringList, setShowRecurringList] = useState(false)
+  const [rumors, setRumors] = useState(() => loadRumors())
+  const [rumorDraft, setRumorDraft] = useState('')
+  const rumorInputRef = useRef(null)
   const [showCompletedList, setShowCompletedList] = useState(false)
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
@@ -319,6 +325,7 @@ export default function Dashboard({ token, onSignOut }) {
         { stats: driveStats, history: driveStatHistory },
         { locations: driveLocations },
         { ledger: driveLedger },
+        { payload: driveRumors },
       ] = await Promise.all([
         loadFromDrive(token),
         loadGlossary(token),
@@ -331,6 +338,7 @@ export default function Dashboard({ token, onSignOut }) {
         loadStats(token),
         loadLocations(token),
         loadPenaltyLedger(token),
+        loadRumorsFromDrive(token),
       ])
 
       if (error === 'scope') {
@@ -404,6 +412,17 @@ export default function Dashboard({ token, onSignOut }) {
       } else if (driveRecurring === null && localRecurring.defs.length > 0) {
         // No Drive file yet — upload what we have locally.
         saveRecurringToDrive(token, localRecurring)
+      }
+
+      // Rumors — same whole-payload last-write-wins contract as recurring defs.
+      const localRumors = loadRumorsMeta()
+      if (driveRumors !== null && (driveRumors.updatedAt || '') > (localRumors.updatedAt || '')) {
+        setRumors(driveRumors.items)
+        saveRumorsRaw(driveRumors)
+      } else if ((localRumors.updatedAt || '') > (driveRumors?.updatedAt || '')) {
+        saveRumorsToDrive(token, localRumors)
+      } else if (driveRumors === null && localRumors.items.length > 0) {
+        saveRumorsToDrive(token, localRumors)
       }
 
       // Stats + contribution history — reconciled in the useStats hook.
@@ -715,7 +734,7 @@ export default function Dashboard({ token, onSignOut }) {
 
       if (allItems.length > 0) {
         setTheming(true)
-        const { themes, suggestedDifficulties: suggested, statWeights } = await themeItems(allItems, glossary, stats)
+        const { themes, suggestedDifficulties: suggested, statWeights } = await themeItems(allItems, glossary, stats, token)
         setThemedTitles(themes)
         setSuggestedDifficulties(suggested)
         setStatWeightsMap(prev => ({ ...prev, ...statWeights }))
@@ -740,7 +759,7 @@ export default function Dashboard({ token, onSignOut }) {
     if (!recurring.length) return
     const unthemed = recurring.filter(d => !themedTitles[d.id])
     if (!unthemed.length) return
-    themeItems(unthemed.map(d => ({ id: d.id, title: d.title })), glossary)
+    themeItems(unthemed.map(d => ({ id: d.id, title: d.title })), glossary, null, token)
       .then(({ themes }) => setThemedTitles(prev => ({ ...prev, ...themes })))
       .catch(() => {})
   }, [recurring]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1132,6 +1151,11 @@ export default function Dashboard({ token, onSignOut }) {
         })
       }
       setShowCreateQuest(false)
+      setCreateQuestInitialData(null)
+      if (convertingRumorId) {
+        handleDeleteRumor(convertingRumorId)
+        setConvertingRumorId(null)
+      }
       setToast(`⚔️ Quest summoned: ${data.title}`)
       loadTasksAndEvents()
     } finally {
@@ -1142,6 +1166,11 @@ export default function Dashboard({ token, onSignOut }) {
   function handleCreateRecurringFromModal({ title, notes, days, dueTime, reminderMinutes }) {
     handleCreateRecurring({ title, notes, days, dueTime, reminderMinutes })
     setShowCreateQuest(false)
+    setCreateQuestInitialData(null)
+    if (convertingRumorId) {
+      handleDeleteRumor(convertingRumorId)
+      setConvertingRumorId(null)
+    }
   }
 
   async function handleCreateMission(data) {
@@ -1323,7 +1352,7 @@ export default function Dashboard({ token, onSignOut }) {
     if (allItems.length > 0) {
       setTheming(true)
       try {
-        const { themes, suggestedDifficulties: suggested } = await themeItems(allItems, glossary)
+        const { themes, suggestedDifficulties: suggested } = await themeItems(allItems, glossary, null, token)
         setThemedTitles(themes)
         setSuggestedDifficulties(suggested)
         const newCache = getThemeCacheAll()
@@ -1381,7 +1410,10 @@ export default function Dashboard({ token, onSignOut }) {
     try {
       const res = await fetch('/api/habit', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           action,
           habit: habit.themedTitle,
@@ -1481,6 +1513,29 @@ export default function Dashboard({ token, onSignOut }) {
     saveRecurringToDrive(token, saveRecurring(updated))
   }
 
+  function handleAddRumor(e) {
+    e.preventDefault()
+    const text = rumorDraft.trim()
+    if (!text) return
+    const updated = [...rumors, createRumor(text)]
+    setRumors(updated)
+    saveRumorsToDrive(token, saveRumors(updated))
+    setRumorDraft('')
+    rumorInputRef.current?.focus()
+  }
+
+  function handleDeleteRumor(id) {
+    const updated = rumors.filter(r => r.id !== id)
+    setRumors(updated)
+    saveRumorsToDrive(token, saveRumors(updated))
+  }
+
+  function handleConvertRumor(rumor) {
+    setCreateQuestInitialData({ title: rumor.text })
+    setConvertingRumorId(rumor.id)
+    setShowCreateQuest(true)
+  }
+
   function handleResetAllBossStats() {
     const updated = resetAllBossStats(habits)
     setHabits(updated)
@@ -1545,14 +1600,20 @@ export default function Dashboard({ token, onSignOut }) {
         <CreateHabitModal
           onClose={() => setShowCreateHabit(false)}
           onCreate={handleCreateHabit}
+          token={token}
         />
       )}
       {showCreateQuest && (
         <CreateQuestModal
-          onClose={() => setShowCreateQuest(false)}
+          onClose={() => {
+            setShowCreateQuest(false)
+            setCreateQuestInitialData(null)
+            setConvertingRumorId(null)
+          }}
           onCreate={handleCreateQuest}
           onCreateRecurring={handleCreateRecurringFromModal}
           defaultReminderMinutes={settings.defaultReminderMinutes}
+          initialData={createQuestInitialData}
         />
       )}
       {showCreateMission && (
@@ -1568,6 +1629,7 @@ export default function Dashboard({ token, onSignOut }) {
           parentThemedTitle={themedTitles[sideQuestParent.id]}
           onCreate={handleCreateSideQuests}
           onClose={() => setSideQuestParent(null)}
+          token={token}
         />
       )}
       {editingTask && (
@@ -1956,6 +2018,46 @@ export default function Dashboard({ token, onSignOut }) {
                         <button
                           className="recurring-action-btn recurring-action-btn--delete"
                           onClick={() => handleDeleteRecurring(def.id)}
+                          title="Delete"
+                        >✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="section">
+              <div className="section-title-row">
+                <h2 className="section-title">📜 Rumors</h2>
+                <HelpButton topic="rumors" onHelp={setHelpTopic} />
+              </div>
+              <p className="rumor-subtitle">Quick thoughts, parked here with no date and no dice — until you send one off to become a quest.</p>
+              <form className="rumor-capture-row" onSubmit={handleAddRumor}>
+                <input
+                  ref={rumorInputRef}
+                  type="text"
+                  className="rumor-capture-input"
+                  value={rumorDraft}
+                  onChange={e => setRumorDraft(e.target.value)}
+                  placeholder="Jot a quick thought..."
+                />
+                <button type="submit" className="rumor-capture-btn" disabled={!rumorDraft.trim()}>+ Add</button>
+              </form>
+              {rumors.length > 0 && (
+                <div className="rumor-list">
+                  {rumors.map(rumor => (
+                    <div key={rumor.id} className="rumor-row">
+                      <span className="rumor-row-text">{rumor.text}</span>
+                      <div className="rumor-row-actions">
+                        <button
+                          className="rumor-action-btn rumor-action-btn--convert"
+                          onClick={() => handleConvertRumor(rumor)}
+                          title="Convert to quest"
+                        >⚔️</button>
+                        <button
+                          className="rumor-action-btn rumor-action-btn--delete"
+                          onClick={() => handleDeleteRumor(rumor.id)}
                           title="Delete"
                         >✕</button>
                       </div>

@@ -35,7 +35,18 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        cleanupOutdatedCaches: true,
+        // HTML is deliberately excluded from precaching. index.html and
+        // privacy.html carry content that must always reflect the latest
+        // deploy (OAuth verification meta tags, landing page copy) — a
+        // precached HTML shell is served by an already-installed service
+        // worker on a return visit *before* that worker's background update
+        // check runs, so a returning visitor (or a crawler that's visited
+        // before) can see stale content until they force-refresh. Only
+        // content-hashed build assets (js/css) and static images are safe to
+        // precache, since their filenames change whenever their content does.
+        globPatterns: ['**/*.{js,css,ico,png,svg}'],
+        navigateFallback: null,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/accounts\.google\.com\//,

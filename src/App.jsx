@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import SignIn from './components/SignIn'
+import Landing from './components/Landing'
 import Dashboard from './components/Dashboard'
 
 const TOKEN_KEY = 'qm_token'
@@ -35,5 +35,5 @@ export default function App() {
 
   return token
     ? <Dashboard token={token} onSignOut={handleSignOut} />
-    : <SignIn onSignIn={handleSignIn} />
+    : <Landing onSignIn={handleSignIn} />
 }

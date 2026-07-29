@@ -4,7 +4,7 @@ import TimePicker from './TimePicker'
 
 const EMPTY_ROW = () => ({ title: '', due: '', dueTime: '09:00', showDate: false, showTime: false })
 
-export default function SideQuestModal({ parentTask, parentThemedTitle, onCreate, onClose }) {
+export default function SideQuestModal({ parentTask, parentThemedTitle, onCreate, onClose, token }) {
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
   const [saving, setSaving] = useState(false)
@@ -18,7 +18,10 @@ export default function SideQuestModal({ parentTask, parentThemedTitle, onCreate
       try {
         const res = await fetch('/api/breakdown', {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ title: parentTask.title, notes: parentTask.notes || undefined }),
         })
         const data = await res.json()
