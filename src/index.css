@@ -847,14 +847,15 @@ body {
 
 /* ── D20 Die Button ── */
 
-/* Left-hand stack: complete-quest die on top, edit pencil directly below —
-   the one action chip deliberately kept OUT of the right-side actions column
-   since it reads more naturally next to the thing it edits. */
+/* Left-hand stack: complete-quest die on top, edit pencil below it — the one
+   action chip deliberately kept OUT of the right-side actions column since it
+   reads more naturally next to the thing it edits. Pencil is dropped down to
+   line up with the due-date/meta row rather than hugging the die. */
 .task-primary-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 14px;
   flex-shrink: 0;
 }
 .task-primary-col .item-edit-btn {
@@ -1183,12 +1184,12 @@ body {
 /* ── Rune Seal Button ── */
 
 /* Left-hand stack for missions, mirroring .task-primary-col: rune seal on
-   top, edit pencil directly below. */
+   top, edit pencil dropped down to line up with the meta row below. */
 .event-primary-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 14px;
   flex-shrink: 0;
 }
 .event-primary-col .item-edit-btn {
@@ -1798,7 +1799,9 @@ body {
   cursor: not-allowed;
 }
 
-/* ✏️ Edit button on task/event items */
+/* ✏️ Edit button on task/event items. Mirrored horizontally — the stock
+   glyph points tip-down-left (left-handed grip); flipping it reads as a
+   right-handed pencil instead. */
 .item-edit-btn {
   background: none;
   border: none;
@@ -1811,6 +1814,7 @@ body {
   color: inherit;
   line-height: 1;
   margin-left: auto;
+  transform: scaleX(-1);
 }
 .item-edit-btn:hover {
   opacity: 0.85;
