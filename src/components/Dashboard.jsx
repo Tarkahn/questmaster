@@ -116,12 +116,14 @@ export default function Dashboard({ token, onSignOut }) {
   const [taskSeenMap, setTaskSeenMap] = useState(() => readJson('qm_task_seen', {}))
   const [penaltyReport, setPenaltyReport] = useState(null)
   // Per-card toll indicators — same numbers as penaltyReport's `lines`, just
-  // keyed by task/subtask id so each quest card can show its own day's cost.
-  // Local-only and re-derived from scratch every sweep; only ever meaningful
-  // for "today" so a stale date in storage is discarded on load.
+  // keyed by task/subtask/mission id so each card can show its own day's cost.
+  // Lives on the penalty ledger's `dailyPerItem` (synced to Drive, see
+  // penalties.js/mergeLedgers) rather than a device-local cache — a badge used
+  // to only appear on whichever device happened to run that day's sweep.
+  // Only ever meaningful for "today" so a stale date is discarded on load.
   const [penaltyByItem, setPenaltyByItem] = useState(() => {
-    const saved = readJson('qm_last_penalty', null)
-    return saved?.date === todayStr() ? saved.perItem : {}
+    const dpi = loadLedger().dailyPerItem
+    return dpi?.date === todayStr() ? dpi.perItem : {}
   })
   const penaltyLedgerRef = useRef(loadLedger())
   const penaltyRunningRef = useRef(false)
@@ -468,6 +470,12 @@ export default function Dashboard({ token, onSignOut }) {
         const merged = mergeLedgers(penaltyLedgerRef.current, driveLedger)
         penaltyLedgerRef.current = merged
         saveLedger(merged)
+        // Pick up a per-card toll breakdown rolled on ANOTHER device today —
+        // this is what makes the badge appear here even when this device
+        // wasn't the one that ran the sweep.
+        if (merged.dailyPerItem?.date === todayStr()) {
+          setPenaltyByItem(merged.dailyPerItem.perItem)
+        }
       }
 
       // Task display order — last-write-wins by updatedAt so a stale poll can't
@@ -562,9 +570,8 @@ export default function Dashboard({ token, onSignOut }) {
         saveLedger(ledger)
         savePenaltyLedger(token, ledger)
       }
-      if (result.ranDaily) {
-        writeJson('qm_last_penalty', { date: todayStr(), perItem: result.perItem })
-        setPenaltyByItem(result.perItem)
+      if (ledger.dailyPerItem?.date === todayStr()) {
+        setPenaltyByItem(ledger.dailyPerItem.perItem)
       }
 
       if (result.xpLost > 0) deductXP(result.xpLost)
@@ -1624,7 +1631,7 @@ export default function Dashboard({ token, onSignOut }) {
   const lookAhead = crystalBallEquipped ? Math.max(3, settings.missionLookAhead || 0) : (settings.missionLookAhead || 0)
   const groupedEvents = lookAhead > 0 ? groupEventsByDay(events) : null
 
-  const renderEventItem = (event) => (
+  const renderEventItem = (event, index) => (
     <EventItem
       key={event.id}
       event={event}
@@ -1638,6 +1645,8 @@ export default function Dashboard({ token, onSignOut }) {
       onUnclaim={handleUnclaimEvent}
       onDifficultyChange={handleDifficultyChange}
       onEdit={() => setEditingEvent(event)}
+      penaltyByItem={penaltyByItem}
+      cardIndex={index}
     />
   )
 

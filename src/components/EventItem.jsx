@@ -3,7 +3,7 @@ import { TIER_INFO, cycleTier } from '../utils/difficulty'
 import { playDiceRoll, playDiceLand, playMissionClaim, playCoinEarn } from '../utils/audio'
 import { missionUrgency } from '../utils/urgency'
 
-export default function EventItem({ event, themedTitle, claimed, claimedXp = null, difficulty = 'normal', coinValue = 0, revealMs = 5000, onClaim, onUnclaim, onDifficultyChange, onEdit }) {
+export default function EventItem({ event, themedTitle, claimed, claimedXp = null, difficulty = 'normal', coinValue = 0, revealMs = 5000, onClaim, onUnclaim, onDifficultyChange, onEdit, penaltyByItem, cardIndex = 0 }) {
   const [phase, setPhase] = useState(claimed ? 'done' : 'idle') // idle | rolling | done
   const [displayNum, setDisplayNum] = useState(null)
   const [earnedXP, setEarnedXP] = useState(null)
@@ -38,6 +38,7 @@ export default function EventItem({ event, themedTitle, claimed, claimedXp = nul
   const isAllDay = Boolean(event.start?.date && !event.start?.dateTime)
   const tier = TIER_INFO[difficulty] || TIER_INFO.normal
   const urgency = missionUrgency(event)
+  const penalty = penaltyByItem?.[event.id]
   const originalTitle = event.summary || '(No title)'
   const hasThemed = Boolean(themedTitle) && themedTitle !== originalTitle
 
@@ -96,15 +97,27 @@ export default function EventItem({ event, themedTitle, claimed, claimedXp = nul
       <div className="urgency-bar" title={urgency.label}>
         <div className={`urgency-bar-fill urgency-bar-fill--${urgency.tier}`} style={{ width: `${urgency.pct}%` }} />
       </div>
-      <div className={`rune-outer${phase === 'done' ? ' rune-outer--done' : ''}${phase === 'rolling' ? ' rune-outer--rolling' : ''}`}>
-        <button
-          className="event-rune"
-          onClick={handleClaim}
-          disabled={phase !== 'idle'}
-          aria-label="Claim mission XP"
-        >
-          <span className="rune-inner">{runeChar}</span>
-        </button>
+      <div className="event-primary-col">
+        <div className={`rune-outer${phase === 'done' ? ' rune-outer--done' : ''}${phase === 'rolling' ? ' rune-outer--rolling' : ''}`}>
+          <button
+            className="event-rune"
+            onClick={handleClaim}
+            disabled={phase !== 'idle'}
+            aria-label="Claim mission XP"
+          >
+            <span className="rune-inner">{runeChar}</span>
+          </button>
+        </div>
+        {phase === 'idle' && onEdit && (
+          <button
+            type="button"
+            className="item-edit-btn"
+            onClick={e => { e.stopPropagation(); onEdit() }}
+            aria-label="Edit mission"
+          >
+            ✏️
+          </button>
+        )}
       </div>
       <div className="event-content">
         <div className="event-time">
@@ -122,27 +135,31 @@ export default function EventItem({ event, themedTitle, claimed, claimedXp = nul
         >
           {displayTitle}
         </button>
-        <div className="event-meta">
+        {penalty && (penalty.hp > 0 || penalty.xp > 0) && (
+          <div className="event-meta">
+            <span
+              className="penalty-indicator"
+              style={{ animationDelay: `${cardIndex * 90}ms` }}
+              title="Today's toll for this mission"
+            >
+              🩸 {penalty.hp > 0 ? `−${penalty.hp}❤️` : ''}{penalty.hp > 0 && penalty.xp > 0 ? ' ' : ''}{penalty.xp > 0 ? `−${penalty.xp}✦` : ''}
+            </span>
+          </div>
+        )}
+      </div>
+      {/* All user action chips for a mission — just the difficulty toggle —
+          in the same right-side column style as quest cards. */}
+      {phase === 'idle' && (
+        <div className="task-actions-col">
           <button
             className={`difficulty-badge difficulty-badge--${difficulty}`}
             onClick={handleDifficultyClick}
-            disabled={phase !== 'idle'}
             aria-label={`Difficulty: ${tier.label}. Tap to change.`}
           >
             {tier.emoji} {tier.label}{tier.d10Bonus > 0 ? ` +${tier.d10Bonus}` : ''}
           </button>
-          {phase === 'idle' && onEdit && (
-            <button
-              type="button"
-              className="item-edit-btn"
-              onClick={e => { e.stopPropagation(); onEdit() }}
-              aria-label="Edit mission"
-            >
-              ✏️
-            </button>
-          )}
         </div>
-      </div>
+      )}
           {phase === 'done' && onUnclaim && (
         <button
           className="event-unclaim-btn"
