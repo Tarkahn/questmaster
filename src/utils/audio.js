@@ -137,29 +137,55 @@ export function playLevelUp() {
   })
 }
 
-// Boss strike — low-frequency noise thud
-export function playBossStrike() {
-  if (_sfxVolume === 0) return
-  const c = ctx()
-  const rate = c.sampleRate
-  const duration = 0.25
-  const buffer = c.createBuffer(1, Math.floor(rate * duration), rate)
+// Boss strike — two quick clanking-sword impacts: a broadband highpass
+// "clack" transient (steel-on-steel contact) plus a handful of inharmonic
+// high partials with fast exponential decay (the metallic ring), fired twice
+// a beat apart and slightly detuned on the second hit so it reads as two
+// blades meeting rather than one clean bell tone.
+function swordClang(c, t, pitchMult) {
+  const noiseDur = 0.02
+  const buffer = c.createBuffer(1, Math.floor(c.sampleRate * noiseDur), c.sampleRate)
   const data = buffer.getChannelData(0)
   for (let i = 0; i < data.length; i++) {
     const decay = 1 - i / data.length
-    data[i] = (Math.random() * 2 - 1) * decay * decay
+    data[i] = (Math.random() * 2 - 1) * decay
   }
-  const src = c.createBufferSource()
-  src.buffer = buffer
-  const filter = c.createBiquadFilter()
-  filter.type = 'lowpass'
-  filter.frequency.value = 140
-  const gain = c.createGain()
-  gain.gain.value = _sfxVolume
-  src.connect(filter)
-  filter.connect(gain)
-  gain.connect(c.destination)
-  src.start()
+  const noise = c.createBufferSource()
+  noise.buffer = buffer
+  const noiseFilter = c.createBiquadFilter()
+  noiseFilter.type = 'highpass'
+  noiseFilter.frequency.value = 2500
+  const noiseGain = c.createGain()
+  noiseGain.gain.value = _sfxVolume * 0.5
+  noise.connect(noiseFilter)
+  noiseFilter.connect(noiseGain)
+  noiseGain.connect(c.destination)
+  noise.start(t)
+  noise.stop(t + noiseDur)
+
+  const partials = [2400, 3150, 4600, 6200]
+  partials.forEach((freq, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = freq * pitchMult
+    const peak = _sfxVolume * (0.28 / (i + 1))
+    gain.gain.setValueAtTime(0, t)
+    gain.gain.linearRampToValueAtTime(peak, t + 0.004)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22 - i * 0.02)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.25)
+  })
+}
+
+export function playBossStrike() {
+  if (_sfxVolume === 0) return
+  const c = ctx()
+  const t0 = c.currentTime
+  swordClang(c, t0, 1)
+  swordClang(c, t0 + 0.09, 0.92)
 }
 
 // Boss defeat — rising 6-note victory flourish

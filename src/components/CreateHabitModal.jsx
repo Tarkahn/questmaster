@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function CreateHabitModal({ onClose, onCreate }) {
+export default function CreateHabitModal({ onClose, onCreate, token }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -13,7 +13,10 @@ export default function CreateHabitModal({ onClose, onCreate }) {
     try {
       const res = await fetch('/api/habit', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ action: 'create', habit: input.trim() }),
       })
       const data = await res.json()

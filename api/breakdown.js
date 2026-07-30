@@ -1,6 +1,18 @@
+import { authenticate } from './_auth.js'
+import { checkQuota } from './_rateLimit.js'
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  const auth = await authenticate(req)
+  if (!auth.ok) {
+    return res.status(auth.status).json({ error: auth.message })
+  }
+  const quota = await checkQuota(auth.userId)
+  if (!quota.allowed) {
+    return res.status(429).json({ error: 'Daily AI usage cap reached' })
   }
 
   const { title, notes } = req.body || {}

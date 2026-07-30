@@ -103,9 +103,12 @@ export function loadLedger() {
       lastSweepDate: l.lastSweepDate || null,
       dueDates: l.dueDates && typeof l.dueDates === 'object' ? l.dueDates : {},
       missions: l.missions && typeof l.missions === 'object' ? l.missions : {},
+      dailyPerItem: l.dailyPerItem && typeof l.dailyPerItem === 'object'
+        ? { date: l.dailyPerItem.date || null, perItem: l.dailyPerItem.perItem || {} }
+        : { date: null, perItem: {} },
     }
   } catch {
-    return { lastSweepDate: null, dueDates: {}, missions: {} }
+    return { lastSweepDate: null, dueDates: {}, missions: {}, dailyPerItem: { date: null, perItem: {} } }
   }
 }
 export function saveLedger(ledger) {
@@ -136,7 +139,11 @@ export function recordMissions(ledger, events) {
 
 // Reconcile two ledgers across devices. lastSweepDate takes the LATEST (so a
 // sweep already done elsewhere today is respected and never repeated); missions
-// union with `resolved` OR'd; dueDates union with local winning on conflict.
+// union with `resolved` OR'd; dueDates union with local winning on conflict;
+// dailyPerItem takes whichever device has the more recent date (same-day union
+// otherwise) so the per-card toll badge shows up regardless of which device
+// actually ran the sweep — see feedback: badges only showed on the device that
+// won the sweep race before this fix.
 export function mergeLedgers(local, drive) {
   if (!drive) return local
   if (!local) return drive
@@ -152,7 +159,16 @@ export function mergeLedgers(local, drive) {
       resolved: !!(a?.resolved || b?.resolved),
     }
   }
-  return { lastSweepDate, dueDates: { ...drive.dueDates, ...local.dueDates }, missions }
+  const localDPI = local.dailyPerItem || { date: null, perItem: {} }
+  const driveDPI = drive.dailyPerItem || { date: null, perItem: {} }
+  let dailyPerItem
+  if (localDPI.date === driveDPI.date) {
+    dailyPerItem = { date: localDPI.date, perItem: { ...driveDPI.perItem, ...localDPI.perItem } }
+  } else {
+    dailyPerItem = [localDPI, driveDPI].filter(d => d.date).sort((a, b) => (a.date < b.date ? -1 : 1)).pop()
+      || { date: null, perItem: {} }
+  }
+  return { lastSweepDate, dueDates: { ...drive.dueDates, ...local.dueDates }, missions, dailyPerItem }
 }
 
 // Mark a mission settled so it never incurs a past-due penalty (e.g. on claim).
@@ -197,8 +213,11 @@ export function recurringMissPenalty({ count, hardMode, character }) {
 
 // ── the sweep ─────────────────────────────────────────────────────────────────
 // Returns { ledger, hpLost, xpLost, lines, perItem, atZeroXp, ranDaily, died:false }.
-// `perItem` is { [taskOrSubtaskId]: {hp, xp} } — the same per-quest numbers
-// baked into `lines`, exposed individually so a quest card can show its own toll.
+// `perItem` is { [taskOrSubtaskOrEventId]: {hp, xp} } — the same per-quest/
+// per-mission numbers baked into `lines`, exposed individually so a card can
+// show its own toll. Persisted into `ledger.dailyPerItem` (see bottom of this
+// function) so it syncs to every device via the existing penalty-ledger Drive
+// file, not just the device that happened to run the sweep.
 // `died` is filled in by the caller after damagePlayer reports reincarnation.
 export function runPenaltyPass({ tasks = [], subtasks = [], habits = [], character, settings = {}, ledger, points = 0, difficultyMemory = {} }) {
   const hardMode = !!settings.hardMode
@@ -293,8 +312,17 @@ export function runPenaltyPass({ tasks = [], subtasks = [], habits = [], charact
     const xp = applyResist(roll(PENALTY_CONFIG.missionXpDie) * hardMult, resist.xp)
     hpLost += hp; xpLost += xp
     lines.push({ icon: '📅', label: `Missed mission: ${m.title}`, hp, xp })
+    perItem[id] = { hp, xp }
     next.missions[id] = { ...m, resolved: true }
   }
+
+  // Fold this pass's perItem into the ledger itself (rather than a device-local
+  // cache) so every device shows the same per-card toll badges regardless of
+  // which one actually ran the sweep — see mergeLedgers.
+  const existingToday = ledger.dailyPerItem?.date === today ? ledger.dailyPerItem.perItem : {}
+  next.dailyPerItem = Object.keys(perItem).length > 0
+    ? { date: today, perItem: { ...existingToday, ...perItem } }
+    : (ledger.dailyPerItem || { date: null, perItem: {} })
 
   const atZeroXp = xpLost > 0 && (points - xpLost) <= 0
   return { ledger: next, hpLost, xpLost, lines, perItem, atZeroXp, ranDaily, died: false }

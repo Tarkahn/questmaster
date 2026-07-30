@@ -4,9 +4,10 @@ import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
 import { loadHabits, saveHabits, createHabitObj, completeHabitObj, processHabits, pauseHabit, resumeHabit, deleteHabit, resetHabit, resetAllBossStats } from '../utils/habits'
-import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, loadRecurringFromDrive, saveRecurringToDrive, loadTaskOrderFromDrive, saveTaskOrderToDrive, loadStats, loadLocations, loadPenaltyLedger, savePenaltyLedger } from '../utils/driveSync'
+import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficulties, saveDifficulties, loadSettingsFromDrive, saveSettingsToDrive, loadGameState, saveGameStateToDrive, loadThemeCache, saveThemeCache, loadCharacter, loadRecurringFromDrive, saveRecurringToDrive, loadTaskOrderFromDrive, saveTaskOrderToDrive, loadStats, loadLocations, loadPenaltyLedger, savePenaltyLedger, loadRumorsFromDrive, saveRumorsToDrive } from '../utils/driveSync'
 import { loadLedger, saveLedger, recordMissions, resolveMission, runPenaltyPass, dueChangePenalty, mergeLedgers, recurringMissPenalty, todayStr } from '../utils/penalties'
 import { loadRecurring, loadRecurringMeta, saveRecurring, saveRecurringRaw, createRecurringDef, getDueToday, markMaterialized, scheduleLabel, setLastTaskId, recordCompletion, recordMiss } from '../utils/recurring'
+import { loadRumors, loadRumorsMeta, saveRumors, saveRumorsRaw, createRumor } from '../utils/rumors'
 import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, computeAutoSortOrder, reorderIds } from '../utils/taskOrder'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
@@ -105,14 +106,9 @@ export default function Dashboard({ token, onSignOut }) {
   const [habits, setHabits] = useState(() => loadHabits())
   const [showCreateHabit, setShowCreateHabit] = useState(false)
   const [showCreateQuest, setShowCreateQuest] = useState(false)
-  const [createQuestInitialTitle, setCreateQuestInitialTitle] = useState('')
+  const [createQuestInitialData, setCreateQuestInitialData] = useState(null)
+  const [convertingRumorId, setConvertingRumorId] = useState(null)
   const [showCreateMission, setShowCreateMission] = useState(false)
-  const [questNotes, setQuestNotes] = useState(() => readJson('qm_quest_notes', []))
-  // Always starts collapsed — this is a quick-jot scratch list, not persisted
-  // open/closed state, so it never eats screen space unless asked to.
-  const [showQuestNotes, setShowQuestNotes] = useState(false)
-  const [addingQuestNote, setAddingQuestNote] = useState(false)
-  const [questNoteDraft, setQuestNoteDraft] = useState('')
   const [editingTask, setEditingTask] = useState(null)
   const [checklistTask, setChecklistTask] = useState(null)
   const [editingSubtask, setEditingSubtask] = useState(null) // { sub, parentId }
@@ -120,12 +116,14 @@ export default function Dashboard({ token, onSignOut }) {
   const [taskSeenMap, setTaskSeenMap] = useState(() => readJson('qm_task_seen', {}))
   const [penaltyReport, setPenaltyReport] = useState(null)
   // Per-card toll indicators — same numbers as penaltyReport's `lines`, just
-  // keyed by task/subtask id so each quest card can show its own day's cost.
-  // Local-only and re-derived from scratch every sweep; only ever meaningful
-  // for "today" so a stale date in storage is discarded on load.
+  // keyed by task/subtask/mission id so each card can show its own day's cost.
+  // Lives on the penalty ledger's `dailyPerItem` (synced to Drive, see
+  // penalties.js/mergeLedgers) rather than a device-local cache — a badge used
+  // to only appear on whichever device happened to run that day's sweep.
+  // Only ever meaningful for "today" so a stale date is discarded on load.
   const [penaltyByItem, setPenaltyByItem] = useState(() => {
-    const saved = readJson('qm_last_penalty', null)
-    return saved?.date === todayStr() ? saved.perItem : {}
+    const dpi = loadLedger().dailyPerItem
+    return dpi?.date === todayStr() ? dpi.perItem : {}
   })
   const penaltyLedgerRef = useRef(loadLedger())
   const penaltyRunningRef = useRef(false)
@@ -147,6 +145,9 @@ export default function Dashboard({ token, onSignOut }) {
   const [showBossJournal, setShowBossJournal] = useState(false)
   const [recurring, setRecurring] = useState(() => loadRecurring())
   const [showRecurringList, setShowRecurringList] = useState(false)
+  const [rumors, setRumors] = useState(() => loadRumors())
+  const [rumorDraft, setRumorDraft] = useState('')
+  const rumorInputRef = useRef(null)
   const [showCompletedList, setShowCompletedList] = useState(false)
   const [showGlossary, setShowGlossary] = useState(false)
   const [glossary, setGlossary] = useState(DEFAULT_GLOSSARY)
@@ -338,6 +339,7 @@ export default function Dashboard({ token, onSignOut }) {
         { stats: driveStats, history: driveStatHistory },
         { locations: driveLocations },
         { ledger: driveLedger },
+        { payload: driveRumors },
       ] = await Promise.all([
         loadFromDrive(token),
         loadGlossary(token),
@@ -350,6 +352,7 @@ export default function Dashboard({ token, onSignOut }) {
         loadStats(token),
         loadLocations(token),
         loadPenaltyLedger(token),
+        loadRumorsFromDrive(token),
       ])
 
       if (error === 'scope') {
@@ -425,6 +428,38 @@ export default function Dashboard({ token, onSignOut }) {
         saveRecurringToDrive(token, localRecurring)
       }
 
+      // Rumors — same whole-payload last-write-wins contract as recurring defs.
+      const localRumors = loadRumorsMeta()
+      if (driveRumors !== null && (driveRumors.updatedAt || '') > (localRumors.updatedAt || '')) {
+        setRumors(driveRumors.items)
+        saveRumorsRaw(driveRumors)
+      } else if ((localRumors.updatedAt || '') > (driveRumors?.updatedAt || '')) {
+        saveRumorsToDrive(token, localRumors)
+      } else if (driveRumors === null && localRumors.items.length > 0) {
+        saveRumorsToDrive(token, localRumors)
+      }
+
+      // One-time migration: fold notes from the retired "Quest Notes" feature
+      // (qm_quest_notes, local-only, never Drive-synced) into Rumors. Runs
+      // after the LWW reconciliation above so it merges into the authoritative
+      // list, then removes the old key so it never repeats.
+      try {
+        const legacyNotes = JSON.parse(localStorage.getItem('qm_quest_notes') || 'null')
+        if (Array.isArray(legacyNotes) && legacyNotes.length > 0) {
+          const current = loadRumorsMeta().items
+          const have = new Set(current.map(r => r.text))
+          const converted = legacyNotes
+            .filter(n => n.title && !have.has(n.title))
+            .map((n, i) => ({ id: `rm_${Date.now()}_${i}`, text: n.title, createdAt: new Date().toLocaleDateString('en-CA') }))
+          if (converted.length > 0) {
+            const merged = [...current, ...converted]
+            setRumors(merged)
+            saveRumorsToDrive(token, saveRumors(merged))
+          }
+          localStorage.removeItem('qm_quest_notes')
+        }
+      } catch {}
+
       // Stats + contribution history — reconciled in the useStats hook.
       mergeStats(driveStats, driveStatHistory)
       mergeLocations(driveLocations)
@@ -435,6 +470,12 @@ export default function Dashboard({ token, onSignOut }) {
         const merged = mergeLedgers(penaltyLedgerRef.current, driveLedger)
         penaltyLedgerRef.current = merged
         saveLedger(merged)
+        // Pick up a per-card toll breakdown rolled on ANOTHER device today —
+        // this is what makes the badge appear here even when this device
+        // wasn't the one that ran the sweep.
+        if (merged.dailyPerItem?.date === todayStr()) {
+          setPenaltyByItem(merged.dailyPerItem.perItem)
+        }
       }
 
       // Task display order — last-write-wins by updatedAt so a stale poll can't
@@ -529,9 +570,8 @@ export default function Dashboard({ token, onSignOut }) {
         saveLedger(ledger)
         savePenaltyLedger(token, ledger)
       }
-      if (result.ranDaily) {
-        writeJson('qm_last_penalty', { date: todayStr(), perItem: result.perItem })
-        setPenaltyByItem(result.perItem)
+      if (ledger.dailyPerItem?.date === todayStr()) {
+        setPenaltyByItem(ledger.dailyPerItem.perItem)
       }
 
       if (result.xpLost > 0) deductXP(result.xpLost)
@@ -738,7 +778,7 @@ export default function Dashboard({ token, onSignOut }) {
 
       if (allItems.length > 0) {
         setTheming(true)
-        const { themes, suggestedDifficulties: suggested, statWeights } = await themeItems(allItems, glossary, stats)
+        const { themes, suggestedDifficulties: suggested, statWeights } = await themeItems(allItems, glossary, stats, token)
         setThemedTitles(themes)
         setSuggestedDifficulties(suggested)
         setStatWeightsMap(prev => ({ ...prev, ...statWeights }))
@@ -787,7 +827,7 @@ export default function Dashboard({ token, onSignOut }) {
     if (!recurring.length) return
     const unthemed = recurring.filter(d => !themedTitles[d.id])
     if (!unthemed.length) return
-    themeItems(unthemed.map(d => ({ id: d.id, title: d.title })), glossary)
+    themeItems(unthemed.map(d => ({ id: d.id, title: d.title })), glossary, null, token)
       .then(({ themes }) => setThemedTitles(prev => ({ ...prev, ...themes })))
       .catch(() => {})
   }, [recurring]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1179,7 +1219,11 @@ export default function Dashboard({ token, onSignOut }) {
         })
       }
       setShowCreateQuest(false)
-      setCreateQuestInitialTitle('')
+      setCreateQuestInitialData(null)
+      if (convertingRumorId) {
+        handleDeleteRumor(convertingRumorId)
+        setConvertingRumorId(null)
+      }
       setToast(`⚔️ Quest summoned: ${data.title}`)
       loadTasksAndEvents()
     } finally {
@@ -1190,39 +1234,11 @@ export default function Dashboard({ token, onSignOut }) {
   function handleCreateRecurringFromModal({ title, notes, days, dueTime, reminderMinutes }) {
     handleCreateRecurring({ title, notes, days, dueTime, reminderMinutes })
     setShowCreateQuest(false)
-  }
-
-  // Quest Notes — a local-only scratch list for backburner ideas that
-  // shouldn't cost XP/HP or show up in the live quest lineup yet. Never
-  // synced to Google Tasks; just localStorage until converted or deleted.
-  function addQuestNote(title) {
-    const trimmed = title.trim()
-    if (!trimmed) return
-    setQuestNotes(prev => {
-      const next = [...prev, { id: `note_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, title: trimmed }]
-      writeJson('qm_quest_notes', next)
-      return next
-    })
-  }
-
-  function deleteQuestNote(id) {
-    setQuestNotes(prev => {
-      const next = prev.filter(n => n.id !== id)
-      writeJson('qm_quest_notes', next)
-      return next
-    })
-  }
-
-  function convertQuestNoteToQuest(note) {
-    deleteQuestNote(note.id)
-    setCreateQuestInitialTitle(note.title)
-    setShowCreateQuest(true)
-  }
-
-  function submitQuestNoteDraft() {
-    addQuestNote(questNoteDraft)
-    setQuestNoteDraft('')
-    setAddingQuestNote(false)
+    setCreateQuestInitialData(null)
+    if (convertingRumorId) {
+      handleDeleteRumor(convertingRumorId)
+      setConvertingRumorId(null)
+    }
   }
 
   async function handleCreateMission(data) {
@@ -1407,7 +1423,7 @@ export default function Dashboard({ token, onSignOut }) {
     if (allItems.length > 0) {
       setTheming(true)
       try {
-        const { themes, suggestedDifficulties: suggested } = await themeItems(allItems, glossary)
+        const { themes, suggestedDifficulties: suggested } = await themeItems(allItems, glossary, null, token)
         setThemedTitles(themes)
         setSuggestedDifficulties(suggested)
         const newCache = getThemeCacheAll()
@@ -1465,7 +1481,10 @@ export default function Dashboard({ token, onSignOut }) {
     try {
       const res = await fetch('/api/habit', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           action,
           habit: habit.themedTitle,
@@ -1565,6 +1584,29 @@ export default function Dashboard({ token, onSignOut }) {
     saveRecurringToDrive(token, saveRecurring(updated))
   }
 
+  function handleAddRumor(e) {
+    e.preventDefault()
+    const text = rumorDraft.trim()
+    if (!text) return
+    const updated = [...rumors, createRumor(text)]
+    setRumors(updated)
+    saveRumorsToDrive(token, saveRumors(updated))
+    setRumorDraft('')
+    rumorInputRef.current?.focus()
+  }
+
+  function handleDeleteRumor(id) {
+    const updated = rumors.filter(r => r.id !== id)
+    setRumors(updated)
+    saveRumorsToDrive(token, saveRumors(updated))
+  }
+
+  function handleConvertRumor(rumor) {
+    setCreateQuestInitialData({ title: rumor.text })
+    setConvertingRumorId(rumor.id)
+    setShowCreateQuest(true)
+  }
+
   function handleResetAllBossStats() {
     const updated = resetAllBossStats(habits)
     setHabits(updated)
@@ -1589,7 +1631,7 @@ export default function Dashboard({ token, onSignOut }) {
   const lookAhead = crystalBallEquipped ? Math.max(3, settings.missionLookAhead || 0) : (settings.missionLookAhead || 0)
   const groupedEvents = lookAhead > 0 ? groupEventsByDay(events) : null
 
-  const renderEventItem = (event) => (
+  const renderEventItem = (event, index) => (
     <EventItem
       key={event.id}
       event={event}
@@ -1603,6 +1645,8 @@ export default function Dashboard({ token, onSignOut }) {
       onUnclaim={handleUnclaimEvent}
       onDifficultyChange={handleDifficultyChange}
       onEdit={() => setEditingEvent(event)}
+      penaltyByItem={penaltyByItem}
+      cardIndex={index}
     />
   )
 
@@ -1630,15 +1674,20 @@ export default function Dashboard({ token, onSignOut }) {
         <CreateHabitModal
           onClose={() => setShowCreateHabit(false)}
           onCreate={handleCreateHabit}
+          token={token}
         />
       )}
       {showCreateQuest && (
         <CreateQuestModal
-          onClose={() => { setShowCreateQuest(false); setCreateQuestInitialTitle('') }}
+          onClose={() => {
+            setShowCreateQuest(false)
+            setCreateQuestInitialData(null)
+            setConvertingRumorId(null)
+          }}
           onCreate={handleCreateQuest}
           onCreateRecurring={handleCreateRecurringFromModal}
           defaultReminderMinutes={settings.defaultReminderMinutes}
-          initialTitle={createQuestInitialTitle}
+          initialData={createQuestInitialData}
         />
       )}
       {showCreateMission && (
@@ -1654,6 +1703,7 @@ export default function Dashboard({ token, onSignOut }) {
           parentThemedTitle={themedTitles[sideQuestParent.id]}
           onCreate={handleCreateSideQuests}
           onClose={() => setSideQuestParent(null)}
+          token={token}
         />
       )}
       {editingTask && (
@@ -1919,40 +1969,10 @@ export default function Dashboard({ token, onSignOut }) {
                   {theming && <span className="theming-badge">✨ Enchanting...</span>}
                 </h2>
                 <HelpButton topic="quests" onHelp={setHelpTopic} />
-                <button
-                  className="add-habit-btn quest-note-add-btn"
-                  onClick={() => setAddingQuestNote(v => !v)}
-                  title="Jot a quick quest idea for later — no XP/HP, not in the lineup yet"
-                >
-                  + Note
-                </button>
                 <button className="add-habit-btn" onClick={() => setShowCreateQuest(true)}>
                   + New Quest
                 </button>
               </div>
-
-              {addingQuestNote && (
-                <form
-                  className="quest-note-draft-row"
-                  onSubmit={e => { e.preventDefault(); submitQuestNoteDraft() }}
-                >
-                  <input
-                    type="text"
-                    className="form-input quest-note-draft-input"
-                    value={questNoteDraft}
-                    onChange={e => setQuestNoteDraft(e.target.value)}
-                    placeholder="Quick idea for later…"
-                    autoFocus
-                    onKeyDown={e => { if (e.key === 'Escape') { setAddingQuestNote(false); setQuestNoteDraft('') } }}
-                  />
-                  <button type="submit" className="quest-note-draft-save" disabled={!questNoteDraft.trim()}>Add</button>
-                  <button
-                    type="button"
-                    className="quest-note-draft-cancel"
-                    onClick={() => { setAddingQuestNote(false); setQuestNoteDraft('') }}
-                  >✕</button>
-                </form>
-              )}
               {tasks.length === 0 && completedTasks.length === 0
                 ? <p className="empty">No quests today — your Google Tasks for today will appear here. Tap <strong>+ New Quest</strong> to create one.</p>
                 : (
@@ -2010,34 +2030,6 @@ export default function Dashboard({ token, onSignOut }) {
                   </DragDropContext>
                 )
               }
-
-              {questNotes.length > 0 && (
-                <div className="completed-section">
-                  <button
-                    className="completed-section-header recurring-section-header--btn"
-                    onClick={() => setShowQuestNotes(v => !v)}
-                  >
-                    <span className="completed-section-label" style={{ color: 'var(--accent-light)' }}>📝 Quest Notes</span>
-                    <span className="completed-section-count" style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--accent-light)' }}>{questNotes.length}</span>
-                    <span className="recurring-chevron">{showQuestNotes ? '▲' : '▼'}</span>
-                  </button>
-                  {showQuestNotes && questNotes.map(note => (
-                    <div key={note.id} className="completed-row quest-note-row">
-                      <span className="completed-row-name quest-note-row-name">{note.title}</span>
-                      <button
-                        className="quest-note-row-btn quest-note-row-convert"
-                        onClick={() => convertQuestNoteToQuest(note)}
-                        title="Turn into a real quest"
-                      >⚔️</button>
-                      <button
-                        className="quest-note-row-btn quest-note-row-delete"
-                        onClick={() => deleteQuestNote(note.id)}
-                        title="Delete note"
-                      >✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
 
               {completedTasks.length > 0 && (
                 <div className="completed-section">
@@ -2102,6 +2094,46 @@ export default function Dashboard({ token, onSignOut }) {
                         <button
                           className="recurring-action-btn recurring-action-btn--delete"
                           onClick={() => handleDeleteRecurring(def.id)}
+                          title="Delete"
+                        >✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="section">
+              <div className="section-title-row">
+                <h2 className="section-title">📜 Rumors</h2>
+                <HelpButton topic="rumors" onHelp={setHelpTopic} />
+              </div>
+              <p className="rumor-subtitle">Quick thoughts, parked here with no date and no dice — until you send one off to become a quest.</p>
+              <form className="rumor-capture-row" onSubmit={handleAddRumor}>
+                <input
+                  ref={rumorInputRef}
+                  type="text"
+                  className="rumor-capture-input"
+                  value={rumorDraft}
+                  onChange={e => setRumorDraft(e.target.value)}
+                  placeholder="Jot a quick thought..."
+                />
+                <button type="submit" className="rumor-capture-btn" disabled={!rumorDraft.trim()}>+ Add</button>
+              </form>
+              {rumors.length > 0 && (
+                <div className="rumor-list">
+                  {rumors.map(rumor => (
+                    <div key={rumor.id} className="rumor-row">
+                      <span className="rumor-row-text">{rumor.text}</span>
+                      <div className="rumor-row-actions">
+                        <button
+                          className="rumor-action-btn rumor-action-btn--convert"
+                          onClick={() => handleConvertRumor(rumor)}
+                          title="Convert to quest"
+                        >⚔️</button>
+                        <button
+                          className="rumor-action-btn rumor-action-btn--delete"
+                          onClick={() => handleDeleteRumor(rumor.id)}
                           title="Delete"
                         >✕</button>
                       </div>

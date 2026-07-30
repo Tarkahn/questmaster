@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import SignIn from './components/SignIn'
+import Landing from './components/Landing'
 import Dashboard from './components/Dashboard'
 import useGoogleAuth from './hooks/useGoogleAuth'
 
@@ -77,5 +77,5 @@ export default function App() {
 
   return token
     ? <Dashboard token={token} onSignOut={handleSignOut} />
-    : <SignIn onClick={() => requestToken({})} />
+    : <Landing onClick={() => requestToken({})} />
 }

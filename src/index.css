@@ -90,7 +90,7 @@ body {
 
 .toast {
   position: fixed;
-  top: 16px;
+  top: calc(16px + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%) translateY(-80px);
   background: linear-gradient(135deg, #1a1a2e, #2d1f6e);
@@ -196,6 +196,32 @@ body {
 
 .signin-btn:active {
   transform: scale(0.98);
+}
+
+.signin-privacy-link {
+  display: block;
+  margin-top: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+/* Landing page (shown before the sign-in screen) — same card, plus room
+   for the app-description paragraph Google OAuth verification requires. */
+.landing-card {
+  max-width: 400px;
+}
+
+.landing-card .app-tagline {
+  margin-bottom: 16px;
+}
+
+.landing-description {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: left;
+  margin-bottom: 32px;
 }
 
 /* ── Dashboard ── */
@@ -821,6 +847,21 @@ body {
 
 /* ── D20 Die Button ── */
 
+/* Left-hand stack: complete-quest die on top, edit pencil below it — the one
+   action chip deliberately kept OUT of the right-side actions column since it
+   reads more naturally next to the thing it edits. Pencil is dropped down to
+   line up with the due-date/meta row rather than hugging the die. */
+.task-primary-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.task-primary-col .item-edit-btn {
+  margin-left: 0;
+}
+
 .d20-wrap {
   width: 38px;
   height: 38px;
@@ -949,8 +990,10 @@ body {
   margin-top: 2px;
 }
 
-/* Checklist + Side Quests column — fixed width, stacked, independent of the
-   title/meta area so quest cards stay uniform regardless of title length. */
+/* Right-side action-chip column — difficulty toggle, plus (top-level quests
+   only) Checklist + Side Quests. Fixed width, stacked, independent of the
+   title/meta area so quest and mission cards stay uniform regardless of
+   title length. Also reused as-is by EventItem for its difficulty toggle. */
 .task-actions-col {
   display: flex;
   flex-direction: column;
@@ -964,6 +1007,10 @@ body {
   text-align: center;
   white-space: normal;
   line-height: 1.3;
+}
+.task-actions-col .difficulty-badge {
+  width: 100%;
+  justify-content: center;
 }
 
 /* ── Difficulty badge ── */
@@ -1134,11 +1181,20 @@ body {
   color: var(--text-muted);
 }
 
-.event-meta .difficulty-badge {
-  margin-top: 0;
-}
-
 /* ── Rune Seal Button ── */
+
+/* Left-hand stack for missions, mirroring .task-primary-col: rune seal on
+   top, edit pencil dropped down to line up with the meta row below. */
+.event-primary-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.event-primary-col .item-edit-btn {
+  margin-left: 0;
+}
 
 .rune-outer {
   width: 42px;
@@ -1743,7 +1799,9 @@ body {
   cursor: not-allowed;
 }
 
-/* ✏️ Edit button on task/event items */
+/* ✏️ Edit button on task/event items. Mirrored horizontally — the stock
+   glyph points tip-down-left (left-handed grip); flipping it reads as a
+   right-handed pencil instead. */
 .item-edit-btn {
   background: none;
   border: none;
@@ -1756,12 +1814,13 @@ body {
   color: inherit;
   line-height: 1;
   margin-left: auto;
+  transform: scaleX(-1);
 }
 .item-edit-btn:hover {
   opacity: 0.85;
 }
 
-/* event-meta row (difficulty + edit button for missions) */
+/* event-meta row — today's per-mission penalty toll, when present */
 .event-meta {
   display: flex;
   align-items: center;
@@ -2608,90 +2667,6 @@ body {
 .completed-row-restore:hover {
   color: var(--text);
   border-color: rgba(255,255,255,0.3);
-}
-
-/* ── Quest Notes (quick-jot backburner list) ── */
-
-.quest-note-add-btn {
-  color: var(--text-muted);
-  border-color: var(--border);
-}
-
-.quest-note-draft-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.quest-note-draft-input {
-  flex: 1;
-  padding: 6px 10px;
-  font-size: 13px;
-}
-
-.quest-note-draft-save,
-.quest-note-draft-cancel {
-  font-size: 12px;
-  font-weight: 700;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.15s, border-color 0.15s;
-}
-.quest-note-draft-save {
-  color: var(--accent-light);
-  border-color: var(--accent);
-}
-.quest-note-draft-save:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.quest-note-draft-save:not(:disabled):hover {
-  background: rgba(124, 58, 237, 0.15);
-  color: var(--text);
-}
-.quest-note-draft-cancel:hover {
-  color: var(--text);
-  border-color: rgba(255,255,255,0.3);
-}
-
-.quest-note-row {
-  padding: 5px 0;
-}
-
-.quest-note-row-name {
-  text-decoration: none;
-  color: var(--text);
-}
-
-.quest-note-row-btn {
-  font-size: 12px;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-}
-.quest-note-row-convert:hover {
-  color: var(--accent-light);
-  border-color: var(--accent);
-  background: rgba(124, 58, 237, 0.15);
-}
-.quest-note-row-delete:hover {
-  color: var(--danger, #e05a5a);
-  border-color: rgba(224,90,90,0.4);
 }
 
 /* ── Mission unclaim button ── */
@@ -3817,6 +3792,116 @@ body {
   border-color: var(--accent);
 }
 .recurring-action-btn--delete:hover {
+  color: var(--fire);
+  border-color: var(--fire);
+}
+
+/* ── Rumors (compressed brain-dump cards) ── */
+
+.rumor-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: -4px 0 10px;
+}
+
+.rumor-capture-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.rumor-capture-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.rumor-capture-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.rumor-capture-btn {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-light);
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.rumor-capture-btn:hover:not(:disabled) {
+  background: rgba(124, 58, 237, 0.15);
+  color: var(--text);
+}
+
+.rumor-capture-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rumor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Dashed border marks these as visually distinct from real quest cards —
+   a scrap of parchment, not yet a summoned quest. */
+.rumor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.rumor-row-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+
+.rumor-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.rumor-action-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.rumor-action-btn--convert:hover {
+  color: var(--gold-light);
+  border-color: var(--gold);
+}
+
+.rumor-action-btn--delete:hover {
   color: var(--fire);
   border-color: var(--fire);
 }

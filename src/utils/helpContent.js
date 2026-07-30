@@ -25,6 +25,14 @@ export const HELP = {
       'Cleric class items (Holy Tome, Cleric\'s Amulet) deal 1 bonus damage to the active boss each time you complete a quest — letting you chip away at it through your daily task work, not just habit check-ins.',
     ],
   },
+  'rumors': {
+    title: '📜 Rumors',
+    body: [
+      'Rumors are a quick brain-dump — jot a thought down without picking a due date or difficulty first.',
+      'They carry no penalties and never get themed by the Scribe. They just sit here until you act on them.',
+      'Tap ⚔️ to send a rumor to the New Quest form (its text becomes the title), or ✕ to discard it.',
+    ],
+  },
   'recurring': {
     title: '🔄 Recurring Quests',
     body: [

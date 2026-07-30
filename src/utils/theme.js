@@ -78,7 +78,7 @@ export function applyThemeCache(driveCache) {
 // real `id` so results land on the right on-screen item.
 // statGlossary: [{ id, name, description }] — passed to LLM for stat classification
 // Returns { themes, suggestedDifficulties, statWeights: {id: {statId: weight}} }
-export async function themeItems(items, glossary, statGlossary) {
+export async function themeItems(items, glossary, statGlossary, token) {
   const keyOf = item => item.cacheKey || item.id
   const uncached = items.filter(item => !getThemeCached(keyOf(item), item.title, item.notes))
 
@@ -86,7 +86,10 @@ export async function themeItems(items, glossary, statGlossary) {
     try {
       const res = await fetch('/api/theme', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           items: uncached.map(i => ({ id: i.id, title: i.title, notes: i.notes || undefined })),
           glossary: glossary || null,

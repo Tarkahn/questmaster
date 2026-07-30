@@ -1,3 +1,6 @@
+import { authenticate } from './_auth.js'
+import { checkQuota } from './_rateLimit.js'
+
 const BASE_SYSTEM_PROMPT = `You are the official scribe of QuestMaster, a Dungeons & Dragons 5th Edition adventure chronicle. Convert modern tasks and calendar events into authentic D&D language, classify each item's difficulty, and identify which character stats the activity develops.
 
 TONE: Classic D&D 5e campaign setting — guilds, keeps, taverns, clerics, paladins, rogues, arcane magic, gold pieces, potions. Do NOT use Tolkien language. Do NOT use Game of Thrones language. Strictly D&D adventure style.
@@ -19,6 +22,15 @@ RULES:
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  const auth = await authenticate(req)
+  if (!auth.ok) {
+    return res.status(auth.status).json({ error: auth.message })
+  }
+  const quota = await checkQuota(auth.userId)
+  if (!quota.allowed) {
+    return res.status(429).json({ error: 'Daily AI usage cap reached' })
   }
 
   const { items, glossary, statGlossary } = req.body || {}

@@ -111,21 +111,43 @@ export default function TaskItem({
             title="Drag to reorder"
           >⠿</span>
         )}
-        <div className="d20-wrap">
-          <button
-            className={`task-d20${phase === 'rolling' ? ' task-d20--rolling' : ''}${phase === 'done' ? ' task-d20--done' : ''}${locked ? ' task-d20--locked' : ''}`}
-            onClick={handleClick}
-            disabled={phase !== 'idle' || locked}
-            aria-label={locked ? 'Complete all side quests first' : 'Roll to complete quest'}
-            title={locked ? 'Complete all side quests first' : undefined}
-          >
-            <span className="d20-inner">
-              {locked && phase === 'idle' && '🔒'}
-              {!locked && phase === 'idle' && (isSub ? '◇' : '◆')}
-              {phase === 'rolling' && displayNum}
-              {phase === 'done' && '✓'}
-            </span>
-          </button>
+        <div className="task-primary-col">
+          <div className="d20-wrap">
+            <button
+              className={`task-d20${phase === 'rolling' ? ' task-d20--rolling' : ''}${phase === 'done' ? ' task-d20--done' : ''}${locked ? ' task-d20--locked' : ''}`}
+              onClick={handleClick}
+              disabled={phase !== 'idle' || locked}
+              aria-label={locked ? 'Complete all side quests first' : 'Roll to complete quest'}
+              title={locked ? 'Complete all side quests first' : undefined}
+            >
+              <span className="d20-inner">
+                {locked && phase === 'idle' && '🔒'}
+                {!locked && phase === 'idle' && (isSub ? '◇' : '◆')}
+                {phase === 'rolling' && displayNum}
+                {phase === 'done' && '✓'}
+              </span>
+            </button>
+          </div>
+          {phase === 'idle' && !isSub && onEdit && (
+            <button
+              type="button"
+              className="item-edit-btn"
+              onClick={e => { e.stopPropagation(); onEdit() }}
+              aria-label="Edit quest"
+            >
+              ✏️
+            </button>
+          )}
+          {phase === 'idle' && isSub && onEditSubtask && (
+            <button
+              type="button"
+              className="item-edit-btn"
+              onClick={e => { e.stopPropagation(); onEditSubtask(task) }}
+              aria-label="Edit side quest"
+            >
+              ✏️
+            </button>
+          )}
         </div>
         <div className="task-content">
           <button
@@ -146,14 +168,6 @@ export default function TaskItem({
             {parseQuestTime(task.notes) && (
               <span className="task-time">⏰ {formatQuestTime(parseQuestTime(task.notes))}</span>
             )}
-            <button
-              className={`difficulty-badge difficulty-badge--${difficulty}`}
-              onClick={handleDifficultyClick}
-              disabled={phase !== 'idle'}
-              aria-label={`Difficulty: ${tier.label}. Tap to change.`}
-            >
-              {tier.emoji} {tier.label}{tier.d20Bonus > 0 ? ` +${tier.d20Bonus}` : ''}
-            </button>
             {penalty && (penalty.hp > 0 || penalty.xp > 0) && (
               <span
                 className="penalty-indicator"
@@ -163,34 +177,22 @@ export default function TaskItem({
                 🩸 {penalty.hp > 0 ? `−${penalty.hp}❤️` : ''}{penalty.hp > 0 && penalty.xp > 0 ? ' ' : ''}{penalty.xp > 0 ? `−${penalty.xp}✦` : ''}
               </span>
             )}
-            {phase === 'idle' && !isSub && onEdit && (
-              <button
-                type="button"
-                className="item-edit-btn"
-                onClick={e => { e.stopPropagation(); onEdit() }}
-                aria-label="Edit quest"
-              >
-                ✏️
-              </button>
-            )}
-            {phase === 'idle' && isSub && onEditSubtask && (
-              <button
-                type="button"
-                className="item-edit-btn"
-                onClick={e => { e.stopPropagation(); onEditSubtask(task) }}
-                aria-label="Edit side quest"
-              >
-                ✏️
-              </button>
-            )}
           </div>
         </div>
-        {/* Checklist + Side Quests — top-level quests only, own fixed-width
-            column so a long title can't push these around and every card
-            lines up the same regardless of content. */}
-        {!isSub && phase === 'idle' && (
+        {/* All user action chips — difficulty toggle, plus (top-level quests
+            only) Checklist + Side Quests — own fixed-width column so a long
+            title can't push these around and every card lines up the same
+            regardless of content. */}
+        {phase === 'idle' && (
           <div className="task-actions-col">
-            {onOpenChecklist && (
+            <button
+              className={`difficulty-badge difficulty-badge--${difficulty}`}
+              onClick={handleDifficultyClick}
+              aria-label={`Difficulty: ${tier.label}. Tap to change.`}
+            >
+              {tier.emoji} {tier.label}{tier.d20Bonus > 0 ? ` +${tier.d20Bonus}` : ''}
+            </button>
+            {!isSub && onOpenChecklist && (
               <button
                 type="button"
                 className={`sidequest-toggle checklist-toggle${checklist.length === 0 ? ' sidequest-toggle--add' : ''}`}

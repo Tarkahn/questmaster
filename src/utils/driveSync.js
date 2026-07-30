@@ -16,6 +16,7 @@ const TASKORDER   = { name: 'questmaster-taskorder.json',       idKey: 'qm_drive
 const STATS       = { name: 'questmaster-character-stats.json', idKey: 'qm_drive_stats_id' }
 const LOCATIONS   = { name: 'questmaster-locations.json',       idKey: 'qm_drive_locations_id' }
 const PENALTY_LEDGER = { name: 'questmaster-penalty-ledger.json', idKey: 'qm_drive_penalty_ledger_id' }
+const RUMORS        = { name: 'questmaster-rumors.json',         idKey: 'qm_drive_rumors_id' }
 
 function auth(token) {
   return { Authorization: `Bearer ${token}` }
@@ -241,4 +242,19 @@ export async function loadPenaltyLedger(token) {
 
 export async function savePenaltyLedger(token, ledger) {
   return saveWith(PENALTY_LEDGER, token, ledger)
+}
+
+// ── Rumors (uncommitted brain-dump notes) ───────────────────────────────────
+// File format: { items: [...], updatedAt } — same whole-payload merge contract
+// as recurring defs.
+export async function loadRumorsFromDrive(token) {
+  return loadWith(RUMORS, token, raw => {
+    if (Array.isArray(raw)) return { payload: { items: raw, updatedAt: '' } }
+    if (raw && Array.isArray(raw.items)) return { payload: raw }
+    return { payload: null }
+  })
+}
+
+export async function saveRumorsToDrive(token, payload) {
+  return saveWith(RUMORS, token, payload)
 }
