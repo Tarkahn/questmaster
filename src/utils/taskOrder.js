@@ -1,4 +1,16 @@
+import { questUrgency } from './urgency'
+import { localMidnight, parseQuestTime } from './api'
+
 const KEY = 'qm_task_order'
+
+// Minutes since local midnight for a quest's reminder time, or Infinity if
+// it has none (so untimed quests always sort after timed ones sharing a day).
+function timeOfDayMinutes(task) {
+  const t = parseQuestTime(task.notes)
+  if (!t) return Infinity
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
 
 export function loadTaskOrder() {
   try {
@@ -53,7 +65,12 @@ export function computeDisplayOrder(tasks, savedOrder) {
     const t = byId.get(id)
     if (t?.due) { datedSlots.push(i); datedIds.push(id) }
   })
-  datedIds.sort((a, b) => new Date(byId.get(a).due) - new Date(byId.get(b).due))
+  datedIds.sort((a, b) => {
+    const diff = new Date(byId.get(a).due) - new Date(byId.get(b).due)
+    // Same due date — break the tie by reminder time-of-day (earlier first),
+    // since `due` alone carries no time component.
+    return diff !== 0 ? diff : timeOfDayMinutes(byId.get(a)) - timeOfDayMinutes(byId.get(b))
+  })
 
   const resultIds = [...base]
   datedSlots.forEach((slotIdx, k) => { resultIds[slotIdx] = datedIds[k] })
@@ -64,8 +81,17 @@ export function computeDisplayOrder(tasks, savedOrder) {
 // Auto-sort by urgency: most overdue at top, freshest undated at bottom.
 // Dated and undated tasks are ranked on the same tier scale so a stale
 // undated quest (yellow) correctly outranks a fresh dated quest (green).
-import { questUrgency } from './urgency'
-import { localMidnight } from './api'
+
+// A same-day/tier tie-break: earlier reminder times score higher (sort
+// first). Deliberately small (well under the ~7pt gap between adjacent
+// day-of-window pct steps — see questUrgency's WINDOW=14 — and under the
+// overdue band's 100pt/day step) so this only ever breaks ties within the
+// same day/tier, never reorders across days. Untimed quests get 0.
+function timeUrgencyBoost(task) {
+  const mins = timeOfDayMinutes(task)
+  if (mins === Infinity) return 0
+  return ((1440 - mins) / 1440) * 0.9
+}
 
 export function computeAutoSortOrder(tasks, taskSeenMap) {
   const todayMs = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime() })()
@@ -76,10 +102,10 @@ export function computeAutoSortOrder(tasks, taskSeenMap) {
     if (task.due) {
       const dueMs = localMidnight(task.due).getTime()
       const daysLeft = Math.round((dueMs - todayMs) / 86400000)
-      if (daysLeft < 0) return 10000 + (-daysLeft) * 100
+      if (daysLeft < 0) return 10000 + (-daysLeft) * 100 + timeUrgencyBoost(task)
     }
     const { pct, tier } = questUrgency(task, taskSeenMap)
-    return (TIER[tier] ?? 1000) + pct
+    return (TIER[tier] ?? 1000) + pct + timeUrgencyBoost(task)
   }
 
   return [...tasks].sort((a, b) => score(b) - score(a))
