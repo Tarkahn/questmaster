@@ -45,10 +45,20 @@ function RevealPicker({ value, onChange, disabled }) {
   )
 }
 
-export default function SettingsModal({ settings, onSave, onReThemeAll, onClose }) {
+export default function SettingsModal({ settings, onSave, onReThemeAll, onClose, token }) {
   const [local, setLocal] = useState({ revealMs: 5000, ...settings })
   const [saving, setSaving] = useState(false)
   const [retheming, setRetheming] = useState(false)
+  const [modelInfo, setModelInfo] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/ai-model', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(res => (res.ok ? res.json() : null))
+      .then(info => { if (!cancelled) setModelInfo(info) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [token])
 
   function update(field, value) {
     setLocal(s => ({ ...s, [field]: value }))
@@ -73,6 +83,15 @@ export default function SettingsModal({ settings, onSave, onReThemeAll, onClose 
         <h2 className="modal-title">⚙️ Settings</h2>
 
         <div className="settings-section-label">Scribe</div>
+
+        <div className="settings-row-compact">
+          <div className="settings-row-compact-left">
+            <span className="settings-label-sm">Connected model</span>
+            <span className="settings-desc-sm">
+              {modelInfo ? `${modelInfo.model} (${modelInfo.provider})` : 'Loading…'}
+            </span>
+          </div>
+        </div>
 
         <div className="settings-row-compact">
           <div className="settings-row-compact-left">

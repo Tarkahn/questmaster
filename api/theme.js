@@ -1,5 +1,6 @@
 import { authenticate } from './_auth.js'
 import { checkQuota } from './_rateLimit.js'
+import { callAI, isAIConfigured, textOf, extractJson } from './_ai.js'
 
 const BASE_SYSTEM_PROMPT = `You are the official scribe of QuestMaster, a Dungeons & Dragons 5th Edition adventure chronicle. Convert modern tasks and calendar events into authentic D&D language, classify each item's difficulty, and identify which character stats the activity develops.
 
@@ -18,6 +19,14 @@ RULES:
 5. NAME RULE: Keep first name, add D&D epithet by role. "call John (architect)" → "commune with John the Grand Builder". No role known → add "the Bold", "the Wise", or "the Swift".
 6. NOTES: Some items include a "(notes: ...)" line beneath the title — use it as context to inform a more accurate theming (specific role, apothecary, type of meeting). NEVER include the notes verbatim in the themed title; the title stays a short headline.
 7. Return only valid JSON — no explanation, no preamble.`
+
+function themeFallback(items) {
+  const themes = {}
+  const difficulties = {}
+  const statWeights = {}
+  items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal'; statWeights[item.id] = {} })
+  return { themes, difficulties, statWeights }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -38,13 +47,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'items must be a non-empty array' })
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    const themes = {}
-    const difficulties = {}
-    const statWeights = {}
-    items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal'; statWeights[item.id] = {} })
-    return res.status(200).json({ themes, difficulties, statWeights })
+  if (!isAIConfigured()) {
+    return res.status(200).json(themeFallback(items))
   }
 
   let systemPrompt = BASE_SYSTEM_PROMPT
@@ -68,23 +72,7 @@ Available stats:\n${statLines}`
     return line
   }).join('\n')
 
-  let anthropicRes
-  try {
-    anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 1024,
-        temperature: 0.9,
-        system: systemPrompt,
-        messages: [{
-          role: 'user',
-          content: `Convert each item, classify its difficulty${Array.isArray(statGlossary) && statGlossary.length > 0 ? ', and identify stat weights' : ''}. Return ONLY a JSON object with arrays of the same length as the input:
+  const userPrompt = `Convert each item, classify its difficulty${Array.isArray(statGlossary) && statGlossary.length > 0 ? ', and identify stat weights' : ''}. Return ONLY a JSON object with arrays of the same length as the input:
 
 ${numbered}
 
@@ -93,34 +81,23 @@ Reply with only this JSON:
   "themes": ["D&D title 1", "D&D title 2", ...],
   "difficulties": ["normal|hard|legendary", ...],
   "statWeights": [{"INT": 0.8, "WIS": 0.2}, {}, {"STR": 1.0}, ...]
-}`,
-        }],
-      }),
+}`
+
+  let data
+  try {
+    data = await callAI({
+      system: systemPrompt,
+      prompt: userPrompt,
+      maxTokens: 1024,
+      openaiMaxTokens: 4096,
+      temperature: 0.9,
     })
   } catch {
-    const themes = {}
-    const difficulties = {}
-    const statWeights = {}
-    items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal'; statWeights[item.id] = {} })
-    return res.status(200).json({ themes, difficulties, statWeights })
+    return res.status(200).json(themeFallback(items))
   }
 
-  if (!anthropicRes.ok) {
-    const themes = {}
-    const difficulties = {}
-    const statWeights = {}
-    items.forEach(item => { themes[item.id] = item.title; difficulties[item.id] = 'normal'; statWeights[item.id] = {} })
-    return res.status(200).json({ themes, difficulties, statWeights })
-  }
-
-  const data = await anthropicRes.json()
-  const text = data.content?.[0]?.text?.trim() || '{}'
-
-  let parsed = { themes: [], difficulties: [], statWeights: [] }
-  try {
-    const match = text.match(/\{[\s\S]*\}/)
-    if (match) parsed = JSON.parse(match[0])
-  } catch {}
+  const text = textOf(data)
+  const parsed = extractJson(text) || { themes: [], difficulties: [], statWeights: [] }
 
   const themes = {}
   const difficulties = {}

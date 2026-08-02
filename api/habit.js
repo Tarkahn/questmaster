@@ -1,5 +1,20 @@
 import { authenticate } from './_auth.js'
 import { checkQuota } from './_rateLimit.js'
+import { callAI, isAIConfigured, textOf, extractJson } from './_ai.js'
+
+const HABIT_CREATE_SCHEMA = {
+  name: 'habitCreate',
+  schema: {
+    type: 'object',
+    properties: {
+      themedTitle: { type: 'string' },
+      bossName: { type: 'string' },
+      bossDescription: { type: 'string' },
+    },
+    required: ['themedTitle', 'bossName', 'bossDescription'],
+    additionalProperties: false,
+  },
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -17,8 +32,7 @@ export default async function handler(req, res) {
 
   const { action, habit, boss, hpRemaining } = req.body || {}
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
+  if (!isAIConfigured()) {
     return res.status(500).json({ error: 'API key not configured' })
   }
 
@@ -63,37 +77,23 @@ Write 3 triumphant sentences of D&D victory narrative. The boss is vanquished. T
   }
 
   try {
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 300,
-        messages: [{ role: 'user', content: prompt }],
-      }),
+    const data = await callAI({
+      prompt,
+      maxTokens: 300,
+      openaiMaxTokens: 2048,
+      jsonSchema: action === 'create' ? HABIT_CREATE_SCHEMA : undefined,
     })
 
-    if (!anthropicRes.ok) throw new Error('Anthropic error')
-
-    const data = await anthropicRes.json()
-    const text = data.content?.[0]?.text?.trim() || ''
+    const text = textOf(data)
 
     if (action === 'create') {
-      try {
-        const match = text.match(/\{[\s\S]*\}/)
-        const parsed = JSON.parse(match?.[0] || text)
-        return res.status(200).json(parsed)
-      } catch {
-        return res.status(200).json({
-          themedTitle: habit,
-          bossName: 'The Ancient Nemesis',
-          bossDescription: 'A primordial force of resistance born from years of inaction. Only daily discipline can bring it low.',
-        })
-      }
+      const parsed = extractJson(text)
+      if (parsed) return res.status(200).json(parsed)
+      return res.status(200).json({
+        themedTitle: habit,
+        bossName: 'The Ancient Nemesis',
+        bossDescription: 'A primordial force of resistance born from years of inaction. Only daily discipline can bring it low.',
+      })
     }
 
     return res.status(200).json({ narrative: text })

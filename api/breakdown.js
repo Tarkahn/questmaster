@@ -1,5 +1,16 @@
 import { authenticate } from './_auth.js'
 import { checkQuota } from './_rateLimit.js'
+import { callAI, isAIConfigured, textOf, extractJson } from './_ai.js'
+
+const SUBTASKS_SCHEMA = {
+  name: 'subtasks',
+  schema: {
+    type: 'object',
+    properties: { subtasks: { type: 'array', items: { type: 'string' } } },
+    required: ['subtasks'],
+    additionalProperties: false,
+  },
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -21,8 +32,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing title' })
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
+  if (!isAIConfigured()) {
     return res.status(500).json({ error: 'API key not configured' })
   }
 
@@ -38,35 +48,19 @@ Return ONLY valid JSON in exactly this shape:
 { "subtasks": ["first step", "second step", "third step"] }`
 
   try {
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 400,
-        messages: [{ role: 'user', content: prompt }],
-      }),
+    const data = await callAI({
+      prompt,
+      maxTokens: 400,
+      openaiMaxTokens: 2048,
+      jsonSchema: SUBTASKS_SCHEMA,
     })
 
-    if (!anthropicRes.ok) throw new Error('Anthropic error')
-
-    const data = await anthropicRes.json()
-    const text = data.content?.[0]?.text?.trim() || ''
-
-    try {
-      const match = text.match(/\{[\s\S]*\}/)
-      const parsed = JSON.parse(match?.[0] || text)
-      const subtasks = Array.isArray(parsed.subtasks)
-        ? parsed.subtasks.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()).slice(0, 5)
-        : []
-      return res.status(200).json({ subtasks })
-    } catch {
-      return res.status(200).json({ subtasks: [] })
-    }
+    const text = textOf(data)
+    const parsed = extractJson(text)
+    const subtasks = Array.isArray(parsed?.subtasks)
+      ? parsed.subtasks.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()).slice(0, 5)
+      : []
+    return res.status(200).json({ subtasks })
   } catch {
     return res.status(200).json({ subtasks: [] })
   }

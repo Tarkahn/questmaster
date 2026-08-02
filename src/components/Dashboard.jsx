@@ -1754,6 +1754,7 @@ export default function Dashboard({ token, onSignOut }) {
           onSave={handleSaveSettings}
           onReThemeAll={handleReThemeAll}
           onClose={() => setShowSettings(false)}
+          token={token}
         />
       )}
       {showCharacterSelect && (
