@@ -3,7 +3,7 @@
 // and the sign-in entry point. The Google token client itself lives in
 // useGoogleAuth (owned by App) so the same client can silently renew the
 // token later — this component just fires the flow via onClick.
-export default function Landing({ onClick }) {
+export default function Landing({ onClick, error }) {
   return (
     <div className="signin-screen">
       <div className="signin-card landing-card">
@@ -18,6 +18,7 @@ export default function Landing({ onClick }) {
           suggest subtask breakdowns, while your progress syncs privately across devices
           through your Google Drive.
         </p>
+        {error && <p className="signin-error" role="alert">{error}</p>}
         <button className="signin-btn" onClick={onClick}>
           Sign in with Google
         </button>

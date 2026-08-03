@@ -198,6 +198,19 @@ body {
   transform: scale(0.98);
 }
 
+/* Sign-in failure / expired-session notice above the button. Silent failures
+   were the whole problem with the old auth flow — this is where they surface. */
+.signin-error {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .signin-privacy-link {
   display: block;
   margin-top: 20px;
