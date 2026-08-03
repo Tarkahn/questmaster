@@ -2044,24 +2044,18 @@ export default function Dashboard({ token, onSignOut }) {
                     + New Mission
                   </button>
                 )}
-                <div className="view-mode-toggle" role="group" aria-label="Quest list view mode">
-                  <button
-                    type="button"
-                    className={`view-mode-btn${settings.combinedView ? '' : ' view-mode-btn--active'}`}
-                    aria-pressed={!settings.combinedView}
-                    onClick={() => handleSetCombinedView(false)}
-                  >
-                    ⚔️ Split
-                  </button>
-                  <button
-                    type="button"
-                    className={`view-mode-btn${settings.combinedView ? ' view-mode-btn--active' : ''}`}
-                    aria-pressed={settings.combinedView}
-                    onClick={() => handleSetCombinedView(true)}
-                  >
-                    📋 Full
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className={`view-switch${settings.combinedView ? ' view-switch--on' : ''}`}
+                  role="switch"
+                  aria-checked={settings.combinedView}
+                  onClick={() => handleSetCombinedView(!settings.combinedView)}
+                >
+                  <span>📋 Full List</span>
+                  <span className="view-switch-track">
+                    <span className="view-switch-knob" />
+                  </span>
+                </button>
               </div>
               {settings.combinedView && (
                 <div className="lookahead-filter" role="group" aria-label="Mission look-ahead window">
