@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS = {
   showMissedQuestSummary: true,
   hardMode: false,            // escalate XP+HP penalties by how many days late
   defaultReminderMinutes: 30, // default Google Calendar reminder lead time for timed quests/missions
+  combinedView: false,        // when true, merge quests + missions into one urgency-sorted list
 }
 
 export function loadSettings() {

@@ -41,7 +41,7 @@ function overdueLabel(hoursLate) {
 // end of the due day. Keeps the exact same overdue transition point as
 // before (midnight after the due day) while giving same-day quests a real,
 // differing hours-remaining figure instead of all reading "due today".
-function questDeadlineMs(task) {
+export function questDeadlineMs(task) {
   const dayMs = localMidnight(task.due).getTime()
   const t = parseQuestTime(task.notes)
   if (!t) return dayMs + (24 * HOUR_MS - 1) // end of due day
@@ -78,15 +78,22 @@ export function questUrgency(task, taskSeenMap) {
   return { pct, tier, label }
 }
 
-// Mission urgency: countdown over a 7-day window, in hours. Timed events use
-// their exact start time; all-day events are treated as ending at midnight.
-export function missionUrgency(event) {
-  const nowMs = Date.now()
+// Mission deadline, in ms since epoch. Timed events use their exact start
+// time; all-day events are treated as ending at midnight. Returns null if
+// the event has no start date/time at all.
+export function missionDeadlineMs(event) {
   const hasTime = Boolean(event.start?.dateTime)
   const raw = event.start?.dateTime || (event.start?.date ? event.start.date + 'T00:00:00' : null)
-  if (!raw) return { pct: 5, tier: 'fresh', label: '' }
+  if (!raw) return null
+  return hasTime ? new Date(raw).getTime() : localMidnight(event.start.date).getTime() + (24 * HOUR_MS - 1)
+}
 
-  const eventMs = hasTime ? new Date(raw).getTime() : localMidnight(event.start.date).getTime() + (24 * HOUR_MS - 1)
+// Mission urgency: countdown over a 7-day window, in hours.
+export function missionUrgency(event) {
+  const nowMs = Date.now()
+  const eventMs = missionDeadlineMs(event)
+  if (eventMs == null) return { pct: 5, tier: 'fresh', label: '' }
+
   const hoursLeft = (eventMs - nowMs) / HOUR_MS
 
   if (hoursLeft < 0) return { pct: 100, tier: 'overdue', label: 'Past event' }

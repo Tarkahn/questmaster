@@ -8,7 +8,7 @@ import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficultie
 import { loadLedger, saveLedger, recordMissions, resolveMission, runPenaltyPass, dueChangePenalty, mergeLedgers, recurringMissPenalty, todayStr } from '../utils/penalties'
 import { loadRecurring, loadRecurringMeta, saveRecurring, saveRecurringRaw, createRecurringDef, getDueToday, markMaterialized, scheduleLabel, setLastTaskId, recordCompletion, recordMiss } from '../utils/recurring'
 import { loadRumors, loadRumorsMeta, saveRumors, saveRumorsRaw, createRumor } from '../utils/rumors'
-import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, computeAutoSortOrder, reorderIds } from '../utils/taskOrder'
+import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, computeAutoSortOrder, computeCombinedOrder, reorderIds } from '../utils/taskOrder'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
@@ -1408,6 +1408,14 @@ export default function Dashboard({ token, onSignOut }) {
     saveSettingsToDrive(token, next)
   }
 
+  // "Full List" toggle — merges quests + missions into one urgency-sorted list.
+  function handleToggleCombinedView() {
+    const next = { ...settings, combinedView: !settings.combinedView }
+    setSettings(next)
+    saveSettings(next)
+    saveSettingsToDrive(token, next)
+  }
+
   async function handleReThemeAll() {
     clearThemeCache()
     await saveThemeCache(token, {})
@@ -1630,6 +1638,61 @@ export default function Dashboard({ token, onSignOut }) {
   const crystalBallEquipped = Object.values(character?.equippedItems || {}).includes('crystal-ball')
   const lookAhead = crystalBallEquipped ? Math.max(3, settings.missionLookAhead || 0) : (settings.missionLookAhead || 0)
   const groupedEvents = lookAhead > 0 ? groupEventsByDay(events) : null
+
+  // "Full List" combined view: quests + missions interleaved by urgency,
+  // claimed missions filtered out (they live in the shared completed bucket instead).
+  const unclaimedEvents = events.filter(e => !isEventClaimed(e.id))
+  const combinedOrder = settings.combinedView
+    ? computeCombinedOrder(tasks, unclaimedEvents, taskSeenMap)
+    : null
+  const combinedCompletedEntries = settings.combinedView
+    ? [
+        ...completedTasks.map(entry => ({
+          type: 'quest',
+          id: entry.task.id,
+          label: entry.themedTitle || entry.task.title || '(Quest)',
+          xp: entry.xp,
+          entry,
+        })),
+        ...events.filter(e => isEventClaimed(e.id)).map(event => ({
+          type: 'mission',
+          id: event.id,
+          label: themedTitles[event.id] || event.summary || '(Mission)',
+          xp: claimedEvents?.claims?.[event.id]?.xp ?? 0,
+          event,
+        })),
+      ]
+    : []
+
+  const renderTaskItem = (task, index, dragHandleProps = null) => (
+    <TaskItem
+      key={task.id}
+      task={task}
+      themedTitle={themedTitles[task.id]}
+      difficulty={getEffectiveDifficulty(task.id)}
+      coinValue={computeCoins(task.id, getEffectiveDifficulty(task.id), taskSeenMap, character.class)}
+      diceBonus={classDiceBonus(character.class) + getItemDiceBonus(character)}
+      revealMs={settings.revealMs || 5000}
+      onComplete={handleComplete}
+      onDifficultyChange={handleDifficultyChange}
+      onEdit={() => setEditingTask(task)}
+      subtasks={subtasksByParent[task.id] || []}
+      themedTitles={themedTitles}
+      getEffectiveDifficulty={getEffectiveDifficulty}
+      taskSeenMap={taskSeenMap}
+      characterClass={character.class}
+      onCompleteSubtask={handleCompleteSubtask}
+      onDeleteSubtask={handleDeleteSubtask}
+      onEditSubtask={(sub) => setEditingSubtask({ sub, parentId: task.id })}
+      onSubtaskDragEnd={handleSubtaskDragEnd}
+      onAddSideQuests={() => handleOpenSideQuests(task)}
+      onOpenChecklist={() => setChecklistTask(task)}
+      dragHandleProps={dragHandleProps}
+      isDated={Boolean(task.due)}
+      penaltyByItem={penaltyByItem}
+      cardIndex={index}
+    />
+  )
 
   const renderEventItem = (event, index) => (
     <EventItem
@@ -1973,92 +2036,132 @@ export default function Dashboard({ token, onSignOut }) {
                 <button className="add-habit-btn" onClick={() => setShowCreateQuest(true)}>
                   + New Quest
                 </button>
-              </div>
-              {tasks.length === 0 && completedTasks.length === 0
-                ? <p className="empty">No quests today — your Google Tasks for today will appear here. Tap <strong>+ New Quest</strong> to create one.</p>
-                : (
-                  <DragDropContext onDragEnd={handleDragEnd}>
-                    <Droppable droppableId="quests">
-                      {(dropProvided) => (
-                        <div ref={dropProvided.innerRef} {...dropProvided.droppableProps}>
-                          {orderedTasks.map((task, index) => (
-                            <Draggable
-                              key={task.id}
-                              draggableId={task.id}
-                              index={index}
-                              isDragDisabled={settings.autoSort || Boolean(task.due)}
-                            >
-                              {(dragProvided, dragSnapshot) => (
-                                <div
-                                  ref={dragProvided.innerRef}
-                                  {...dragProvided.draggableProps}
-                                  className={dragSnapshot.isDragging ? 'task-dragging' : undefined}
-                                >
-                                  <TaskItem
-                                    task={task}
-                                    themedTitle={themedTitles[task.id]}
-                                    difficulty={getEffectiveDifficulty(task.id)}
-                                    coinValue={computeCoins(task.id, getEffectiveDifficulty(task.id), taskSeenMap, character.class)}
-                                    diceBonus={classDiceBonus(character.class) + getItemDiceBonus(character)}
-                                    revealMs={settings.revealMs || 5000}
-                                    onComplete={handleComplete}
-                                    onDifficultyChange={handleDifficultyChange}
-                                    onEdit={() => setEditingTask(task)}
-                                    subtasks={subtasksByParent[task.id] || []}
-                                    themedTitles={themedTitles}
-                                    getEffectiveDifficulty={getEffectiveDifficulty}
-                                    taskSeenMap={taskSeenMap}
-                                    characterClass={character.class}
-                                    onCompleteSubtask={handleCompleteSubtask}
-                                    onDeleteSubtask={handleDeleteSubtask}
-                                    onEditSubtask={(sub) => setEditingSubtask({ sub, parentId: task.id })}
-                                    onSubtaskDragEnd={handleSubtaskDragEnd}
-                                    onAddSideQuests={() => handleOpenSideQuests(task)}
-                                    onOpenChecklist={() => setChecklistTask(task)}
-                                    dragHandleProps={(settings.autoSort || task.due) ? null : dragProvided.dragHandleProps}
-                                    isDated={Boolean(task.due)}
-                                    penaltyByItem={penaltyByItem}
-                                    cardIndex={index}
-                                  />
-                                </div>
-                              )}
-                            </Draggable>
-                          ))}
-                          {dropProvided.placeholder}
-                        </div>
-                      )}
-                    </Droppable>
-                  </DragDropContext>
-                )
-              }
-
-              {completedTasks.length > 0 && (
-                <div className="completed-section">
-                  <button
-                    className="completed-section-header recurring-section-header--btn"
-                    onClick={() => setShowCompletedList(v => !v)}
-                  >
-                    <span className="completed-section-label">✓ Completed Today</span>
-                    <span className="completed-section-count">{completedTasks.length}</span>
-                    <span className="recurring-chevron">{showCompletedList ? '▲' : '▼'}</span>
+                {settings.combinedView && (
+                  <button className="add-habit-btn" onClick={() => setShowCreateMission(true)}>
+                    + New Mission
                   </button>
-                  {showCompletedList && completedTasks.map(entry => (
-                    <div key={entry.task.id} className="completed-row">
-                      <span className="completed-row-check">✓</span>
-                      <span className="completed-row-name">
-                        {entry.themedTitle || entry.task.title || '(Quest)'}
-                      </span>
-                      <span className="completed-row-xp">+{entry.xp} XP</span>
-                      <button
-                        className="completed-row-restore"
-                        onClick={() => handleRestoreTask(entry)}
-                      >
-                        ↩ Restore
-                      </button>
-                    </div>
+                )}
+                <button
+                  className={`add-habit-btn${settings.combinedView ? ' lookahead-btn--active' : ''}`}
+                  onClick={handleToggleCombinedView}
+                >
+                  📋 Full List
+                </button>
+              </div>
+              {settings.combinedView && (
+                <div className="lookahead-filter" role="group" aria-label="Mission look-ahead window">
+                  {LOOKAHEAD_OPTIONS.map(opt => (
+                    <button
+                      key={opt.days}
+                      className={`lookahead-btn${lookAhead === opt.days ? ' lookahead-btn--active' : ''}`}
+                      onClick={() => handleSetLookAhead(opt.days)}
+                    >
+                      {opt.label}
+                    </button>
                   ))}
                 </div>
               )}
+              {settings.combinedView
+                ? (combinedOrder.length === 0 && combinedCompletedEntries.length === 0
+                    ? <p className="empty">No quests or missions right now. Tap <strong>+ New Quest</strong> or <strong>+ New Mission</strong> to add one.</p>
+                    : (
+                      <div>
+                        {combinedOrder.map((entry, index) => (
+                          entry.type === 'quest'
+                            ? renderTaskItem(entry.item, index)
+                            : renderEventItem(entry.item, index)
+                        ))}
+                      </div>
+                    )
+                  )
+                : (tasks.length === 0 && completedTasks.length === 0
+                    ? <p className="empty">No quests today — your Google Tasks for today will appear here. Tap <strong>+ New Quest</strong> to create one.</p>
+                    : (
+                      <DragDropContext onDragEnd={handleDragEnd}>
+                        <Droppable droppableId="quests">
+                          {(dropProvided) => (
+                            <div ref={dropProvided.innerRef} {...dropProvided.droppableProps}>
+                              {orderedTasks.map((task, index) => (
+                                <Draggable
+                                  key={task.id}
+                                  draggableId={task.id}
+                                  index={index}
+                                  isDragDisabled={settings.autoSort || Boolean(task.due)}
+                                >
+                                  {(dragProvided, dragSnapshot) => (
+                                    <div
+                                      ref={dragProvided.innerRef}
+                                      {...dragProvided.draggableProps}
+                                      className={dragSnapshot.isDragging ? 'task-dragging' : undefined}
+                                    >
+                                      {renderTaskItem(task, index, (settings.autoSort || task.due) ? null : dragProvided.dragHandleProps)}
+                                    </div>
+                                  )}
+                                </Draggable>
+                              ))}
+                              {dropProvided.placeholder}
+                            </div>
+                          )}
+                        </Droppable>
+                      </DragDropContext>
+                    )
+                  )
+              }
+
+              {settings.combinedView
+                ? (combinedCompletedEntries.length > 0 && (
+                    <div className="completed-section">
+                      <button
+                        className="completed-section-header recurring-section-header--btn"
+                        onClick={() => setShowCompletedList(v => !v)}
+                      >
+                        <span className="completed-section-label">✓ Completed Today</span>
+                        <span className="completed-section-count">{combinedCompletedEntries.length}</span>
+                        <span className="recurring-chevron">{showCompletedList ? '▲' : '▼'}</span>
+                      </button>
+                      {showCompletedList && combinedCompletedEntries.map(row => (
+                        <div key={row.id} className="completed-row">
+                          <span className="completed-row-check">✓</span>
+                          <span className="completed-row-name">{row.label}</span>
+                          <span className="completed-row-xp">+{row.xp} XP</span>
+                          <button
+                            className="completed-row-restore"
+                            onClick={() => row.type === 'quest' ? handleRestoreTask(row.entry) : handleUnclaimEvent(row.id)}
+                          >
+                            ↩ {row.type === 'quest' ? 'Restore' : 'Unclaim'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                : (completedTasks.length > 0 && (
+                    <div className="completed-section">
+                      <button
+                        className="completed-section-header recurring-section-header--btn"
+                        onClick={() => setShowCompletedList(v => !v)}
+                      >
+                        <span className="completed-section-label">✓ Completed Today</span>
+                        <span className="completed-section-count">{completedTasks.length}</span>
+                        <span className="recurring-chevron">{showCompletedList ? '▲' : '▼'}</span>
+                      </button>
+                      {showCompletedList && completedTasks.map(entry => (
+                        <div key={entry.task.id} className="completed-row">
+                          <span className="completed-row-check">✓</span>
+                          <span className="completed-row-name">
+                            {entry.themedTitle || entry.task.title || '(Quest)'}
+                          </span>
+                          <span className="completed-row-xp">+{entry.xp} XP</span>
+                          <button
+                            className="completed-row-restore"
+                            onClick={() => handleRestoreTask(entry)}
+                          >
+                            ↩ Restore
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+              }
 
               {recurring.length > 0 && (
                 <div className="completed-section">
@@ -2144,37 +2247,39 @@ export default function Dashboard({ token, onSignOut }) {
               )}
             </section>
 
-            <section className="section">
-              <div className="section-title-row">
-                <h2 className="section-title">📅 {lookAhead > 0 ? 'Upcoming Missions' : "Today's Missions"}</h2>
-                <HelpButton topic="missions" onHelp={setHelpTopic} />
-                <button className="add-habit-btn" onClick={() => setShowCreateMission(true)}>
-                  + New Mission
-                </button>
-              </div>
-              <div className="lookahead-filter" role="group" aria-label="Mission look-ahead window">
-                {LOOKAHEAD_OPTIONS.map(opt => (
-                  <button
-                    key={opt.days}
-                    className={`lookahead-btn${lookAhead === opt.days ? ' lookahead-btn--active' : ''}`}
-                    onClick={() => handleSetLookAhead(opt.days)}
-                  >
-                    {opt.label}
+            {!settings.combinedView && (
+              <section className="section">
+                <div className="section-title-row">
+                  <h2 className="section-title">📅 {lookAhead > 0 ? 'Upcoming Missions' : "Today's Missions"}</h2>
+                  <HelpButton topic="missions" onHelp={setHelpTopic} />
+                  <button className="add-habit-btn" onClick={() => setShowCreateMission(true)}>
+                    + New Mission
                   </button>
-                ))}
-              </div>
-              {events.length === 0
-                ? <p className="empty">{lookAhead > 0 ? 'No missions in this window. Events from your Google Calendar appear here.' : 'No missions today. Events from your Google Calendar appear here — try expanding the look-ahead window above.'}</p>
-                : lookAhead > 0
-                  ? groupedEvents.map(group => (
-                      <div key={group.key} className="mission-day-group">
-                        <div className="mission-day-header">{group.label}</div>
-                        {group.events.map(renderEventItem)}
-                      </div>
-                    ))
-                  : events.map(renderEventItem)
-              }
-            </section>
+                </div>
+                <div className="lookahead-filter" role="group" aria-label="Mission look-ahead window">
+                  {LOOKAHEAD_OPTIONS.map(opt => (
+                    <button
+                      key={opt.days}
+                      className={`lookahead-btn${lookAhead === opt.days ? ' lookahead-btn--active' : ''}`}
+                      onClick={() => handleSetLookAhead(opt.days)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {events.length === 0
+                  ? <p className="empty">{lookAhead > 0 ? 'No missions in this window. Events from your Google Calendar appear here.' : 'No missions today. Events from your Google Calendar appear here — try expanding the look-ahead window above.'}</p>
+                  : lookAhead > 0
+                    ? groupedEvents.map(group => (
+                        <div key={group.key} className="mission-day-group">
+                          <div className="mission-day-header">{group.label}</div>
+                          {group.events.map(renderEventItem)}
+                        </div>
+                      ))
+                    : events.map(renderEventItem)
+                }
+              </section>
+            )}
 
             <section className="section">
               <div className="section-title-row">

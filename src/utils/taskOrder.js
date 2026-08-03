@@ -1,4 +1,4 @@
-import { questUrgency } from './urgency'
+import { questUrgency, questDeadlineMs, missionDeadlineMs } from './urgency'
 import { localMidnight, parseQuestTime } from './api'
 
 const KEY = 'qm_task_order'
@@ -109,6 +109,29 @@ export function computeAutoSortOrder(tasks, taskSeenMap) {
   }
 
   return [...tasks].sort((a, b) => score(b) - score(a))
+}
+
+// Combined quests+missions order for the "Full List" toggle: every dated
+// item (quest or mission) ranked by raw deadline, soonest/most-overdue
+// first, followed by undated quests ranked most-stale-first. Undated
+// quests never compete with dated items for a slot — unlike
+// computeAutoSortOrder, which lets a stale undated quest outrank a fresh
+// dated one, undated items are strictly last here regardless of staleness.
+export function computeCombinedOrder(tasks, unclaimedEvents, taskSeenMap) {
+  const datedTasks = tasks.filter(t => t.due)
+  const undatedTasks = tasks.filter(t => !t.due)
+
+  const datedEntries = [
+    ...datedTasks.map(task => ({ type: 'quest', item: task, deadlineMs: questDeadlineMs(task) })),
+    ...unclaimedEvents.map(event => ({ type: 'mission', item: event, deadlineMs: missionDeadlineMs(event) })),
+  ]
+  datedEntries.sort((a, b) => a.deadlineMs - b.deadlineMs)
+
+  const undatedEntries = [...undatedTasks]
+    .sort((a, b) => questUrgency(b, taskSeenMap).pct - questUrgency(a, taskSeenMap).pct)
+    .map(task => ({ type: 'quest', item: task }))
+
+  return [...datedEntries.map(({ type, item }) => ({ type, item })), ...undatedEntries]
 }
 
 // Reorders the displayed id list after a drag (from index -> to index).
