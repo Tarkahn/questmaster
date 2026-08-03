@@ -44,20 +44,26 @@ until you explicitly sign out or revoke access in your Google account.
 ### Environment variables
 
 Both must be set in Vercel (Project → Settings → Environment Variables) for
-Production, Preview, and Development:
+**Production and Preview**. Vercel classifies them as sensitive and blocks
+sensitive values from the Development environment, since that environment can be
+pulled down to a local machine — so for local work, put them in `.env` by hand
+instead.
 
 | Variable | Value |
 | --- | --- |
-| `GOOGLE_CLIENT_SECRET` | From the same OAuth 2.0 Client ID that produced `VITE_GOOGLE_CLIENT_ID`, in Google Cloud Console → APIs & Services → Credentials |
+| `GOOGLE_CLIENT_SECRET` | Google no longer lets you view an existing client secret — only its last 4 characters. Use **+ Add secret** on the OAuth client to mint a new one, which is displayed once at creation. A client can hold several secrets at a time, so adding one does not break the existing one. |
 | `SESSION_SECRET` | 32 random bytes, base64. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+
+After the new client secret is confirmed working, **Disable** the old one (this
+is reversible) and delete it only once nothing has broken.
 
 ### Google Cloud Console
 
-- **Publishing status must be "In production", not "Testing."** This is the one
-  setting most likely to still cause short sessions after this change: while an
-  app is in Testing, Google expires every refresh token after **7 days**,
-  regardless of what the code does. APIs & Services → OAuth consent screen →
-  Publish app.
+- **Publishing status must be "In production", not "Testing."** While an app is
+  in Testing, Google expires every refresh token after **7 days** regardless of
+  what the code does. Checked on 2026-08-03: this project is already **In
+  production**, so it was not the cause of the short sessions — but it's the
+  first thing to re-check if long sessions ever regress.
 - The OAuth client must be of type **Web application**, with the site's origin
   listed under **Authorized JavaScript origins** (production domain, plus
   `http://localhost:5173` and `http://localhost:3000` for local work). The popup
