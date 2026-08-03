@@ -57,6 +57,13 @@ instead.
 After the new client secret is confirmed working, **Disable** the old one (this
 is reversible) and delete it only once nothing has broken.
 
+`VITE_GOOGLE_CLIENT_ID` must also cover **Preview**, not just Production. Vite
+inlines `VITE_*` values at build time, so a Preview build without it ships an
+empty client ID — `initCodeClient` then throws "Missing required parameter
+client_id" inside a React effect, React unmounts the tree, and the deployment
+renders as a blank page. The hook now guards this and shows a message instead,
+but the variable still has to be present for sign-in to work at all.
+
 ### Google Cloud Console
 
 - **Publishing status must be "In production", not "Testing."** While an app is

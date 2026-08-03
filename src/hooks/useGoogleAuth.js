@@ -22,8 +22,27 @@ export default function useGoogleAuth({ onCode, onError }) {
   onErrorRef.current = onError
 
   useEffect(() => {
+    // Without a client ID, initCodeClient throws "Missing required parameter
+    // client_id" synchronously inside this effect, which React treats as a
+    // render-phase failure and responds to by unmounting the entire tree — a
+    // blank page with no explanation. Fail loudly and keep the app on screen.
+    if (!CLIENT_ID) {
+      onErrorRef.current?.(
+        'Sign-in is not configured for this deployment (missing Google client ID).'
+      )
+      return
+    }
+
     function initClient() {
-      clientRef.current = window.google.accounts.oauth2.initCodeClient({
+      try {
+        clientRef.current = createCodeClient()
+      } catch (err) {
+        onErrorRef.current?.(`Google sign-in failed to start: ${err.message}`)
+      }
+    }
+
+    function createCodeClient() {
+      return window.google.accounts.oauth2.initCodeClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
         ux_mode: 'popup',
