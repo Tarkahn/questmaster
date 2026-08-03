@@ -1408,9 +1408,12 @@ export default function Dashboard({ token, onSignOut }) {
     saveSettingsToDrive(token, next)
   }
 
-  // "Full List" toggle — merges quests + missions into one urgency-sorted list.
-  function handleToggleCombinedView() {
-    const next = { ...settings, combinedView: !settings.combinedView }
+  // View mode: "split" keeps Today's Quests / Missions separate, "full" merges
+  // quests + missions into one urgency-sorted list. Takes an explicit target so
+  // the segmented toggle can set a mode rather than blind-flipping it.
+  function handleSetCombinedView(combined) {
+    if (combined === settings.combinedView) return
+    const next = { ...settings, combinedView: combined }
     setSettings(next)
     saveSettings(next)
     saveSettingsToDrive(token, next)
@@ -2029,7 +2032,7 @@ export default function Dashboard({ token, onSignOut }) {
             <section className="section">
               <div className="section-title-row">
                 <h2 className="section-title">
-                  ⚔️ Today's Quests
+                  {settings.combinedView ? '📋 Full List' : "⚔️ Today's Quests"}
                   {theming && <span className="theming-badge">✨ Enchanting...</span>}
                 </h2>
                 <HelpButton topic="quests" onHelp={setHelpTopic} />
@@ -2041,12 +2044,24 @@ export default function Dashboard({ token, onSignOut }) {
                     + New Mission
                   </button>
                 )}
-                <button
-                  className={`add-habit-btn${settings.combinedView ? ' lookahead-btn--active' : ''}`}
-                  onClick={handleToggleCombinedView}
-                >
-                  📋 Full List
-                </button>
+                <div className="view-mode-toggle" role="group" aria-label="Quest list view mode">
+                  <button
+                    type="button"
+                    className={`view-mode-btn${settings.combinedView ? '' : ' view-mode-btn--active'}`}
+                    aria-pressed={!settings.combinedView}
+                    onClick={() => handleSetCombinedView(false)}
+                  >
+                    ⚔️ Split
+                  </button>
+                  <button
+                    type="button"
+                    className={`view-mode-btn${settings.combinedView ? ' view-mode-btn--active' : ''}`}
+                    aria-pressed={settings.combinedView}
+                    onClick={() => handleSetCombinedView(true)}
+                  >
+                    📋 Full
+                  </button>
+                </div>
               </div>
               {settings.combinedView && (
                 <div className="lookahead-filter" role="group" aria-label="Mission look-ahead window">

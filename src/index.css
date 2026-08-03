@@ -576,6 +576,38 @@ body {
   color: #fff;
 }
 
+/* ── Quest view-mode toggle (Split / Full List) ──
+   Segmented pill in the Quests header. Both modes stay visible so the active
+   one is always unambiguous — same visual language as .lookahead-filter, but
+   sized to sit inline with the + New Quest buttons instead of filling a row. */
+.view-mode-toggle {
+  display: inline-flex;
+  gap: 3px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+}
+.view-mode-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.view-mode-btn:hover { color: var(--text); }
+.view-mode-btn--active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 8px rgba(124, 58, 237, 0.55);
+}
+.view-mode-btn--active:hover { color: #fff; }
+
 .mission-day-group { margin-bottom: 14px; }
 .mission-day-header {
   font-size: 12px;
