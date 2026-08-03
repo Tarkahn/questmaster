@@ -2032,7 +2032,7 @@ export default function Dashboard({ token, onSignOut }) {
             <section className="section">
               <div className="section-title-row">
                 <h2 className="section-title">
-                  {settings.combinedView ? '📋 Full List' : "⚔️ Today's Quests"}
+                  ⚔️ Today's Quests
                   {theming && <span className="theming-badge">✨ Enchanting...</span>}
                 </h2>
                 <HelpButton topic="quests" onHelp={setHelpTopic} />
