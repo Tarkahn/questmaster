@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchTodaysTasks, fetchUpcomingEvents, markTaskComplete, markTaskIncomplete, createTask, createSubtask, createEvent, deleteTask, updateTask, updateTaskChecklist, deleteEvent, updateEvent, buildCompanionEvent, formatQuestTime, moveSubtask, parseQuestTime, parseQuestReminder, parseChecklist, stripAuxTags, dueDateOnly } from '../utils/api'
+import { fetchTodaysTasks, fetchUpcomingEvents, markTaskComplete, markTaskIncomplete, createTask, createSubtask, createEvent, deleteTask, updateTask, updateTaskChecklist, deleteEvent, updateEvent, buildCompanionEvent, formatQuestTime, moveSubtask, parseQuestTime, parseQuestReminder, parseChecklist, stripAuxTags, dueDateOnly, localMidnight } from '../utils/api'
 import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
@@ -89,6 +89,39 @@ function groupEventsByDay(events) {
     }
     cur.events.push(ev)
   }
+  return groups
+}
+
+// The day a combined-view row belongs under. Missions carry a timestamp;
+// quests carry Google Tasks' UTC-midnight `due`, which has to go through
+// localMidnight — `new Date(due)` rolls back a day west of Greenwich.
+// Undated quests return null and collect under their own heading.
+function combinedEntryDate(entry) {
+  return entry.type === 'mission'
+    ? eventStartDate(entry.item)
+    : localMidnight(entry.item.due)
+}
+
+// Same day-bucketing as groupEventsByDay, over the merged quest+mission list.
+// Mission cards show only a time of day and quest cards only a bare month/day,
+// so without these headers the combined list gives no way to tell which day an
+// item falls on — the reason the 3-day / week / month windows were hard to read.
+// computeCombinedOrder already sorts by deadline and pins undated quests last,
+// so consecutive runs share a day and the undated ones form one trailing group.
+// Each row keeps its position in the flat list as `index`, which drives the
+// staggered card animation.
+function groupCombinedByDay(entries) {
+  const groups = []
+  let cur = null
+  entries.forEach((entry, index) => {
+    const d = combinedEntryDate(entry)
+    const key = d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'undated'
+    if (!cur || cur.key !== key) {
+      cur = { key, label: d ? dayHeaderLabel(d) : 'No date', entries: [] }
+      groups.push(cur)
+    }
+    cur.entries.push({ ...entry, index })
+  })
   return groups
 }
 
@@ -2075,10 +2108,15 @@ export default function Dashboard({ token, onSignOut }) {
                     ? <p className="empty">No quests or missions right now. Tap <strong>+ New Quest</strong> or <strong>+ New Mission</strong> to add one.</p>
                     : (
                       <div>
-                        {combinedOrder.map((entry, index) => (
-                          entry.type === 'quest'
-                            ? renderTaskItem(entry.item, index)
-                            : renderEventItem(entry.item, index)
+                        {groupCombinedByDay(combinedOrder).map(group => (
+                          <div key={group.key} className="mission-day-group">
+                            <div className="mission-day-header">{group.label}</div>
+                            {group.entries.map(entry => (
+                              entry.type === 'quest'
+                                ? renderTaskItem(entry.item, entry.index)
+                                : renderEventItem(entry.item, entry.index)
+                            ))}
+                          </div>
                         ))}
                       </div>
                     )
