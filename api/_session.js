@@ -6,6 +6,7 @@
 // can't read it (XSS can't steal it) and a leaked cookie is useless without
 // SESSION_SECRET. The browser only ever holds short-lived access tokens.
 import crypto from 'node:crypto'
+import { Redis } from '@upstash/redis'
 
 const COOKIE_NAME = 'qm_rt'
 // Google refresh tokens for a published app don't expire on a fixed schedule,
@@ -63,7 +64,7 @@ function cookie(req, value, maxAge) {
   return flags.join('; ')
 }
 
-export function readRefreshToken(req) {
+function readCookieValue(req) {
   const jar = req.headers.cookie || ''
   const hit = jar
     .split(';')
@@ -73,12 +74,92 @@ export function readRefreshToken(req) {
   return unseal(decodeURIComponent(hit.slice(COOKIE_NAME.length + 1)))
 }
 
-export function setRefreshCookie(req, res, refreshToken) {
-  res.setHeader('Set-Cookie', cookie(req, encodeURIComponent(seal(refreshToken)), MAX_AGE_S))
+// The cookie used to carry the refresh token itself, one private copy per
+// device. Google does not guarantee that older refresh tokens survive when it
+// issues a new one for the same account and client, so signing in on a second
+// device could kill the first device's token — see the multi-device section of
+// docs/google-auth-long-sessions.md. Now the cookie carries only the Google
+// account id and the token lives in one shared server-side slot, so every
+// device follows whichever token is currently valid.
+//
+// v1 cookies (raw refresh token) are still accepted so the change doesn't sign
+// anyone out on deploy; they get upgraded to v2 on their next refresh.
+export function readSession(req) {
+  const raw = readCookieValue(req)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed?.v === 2 && parsed.sub) return { version: 2, sub: parsed.sub }
+  } catch {
+    // Not JSON — a v1 cookie holding the refresh token directly.
+  }
+  return { version: 1, refreshToken: raw }
+}
+
+export function setSessionCookie(req, res, sub) {
+  const value = seal(JSON.stringify({ v: 2, sub }))
+  res.setHeader('Set-Cookie', cookie(req, encodeURIComponent(value), MAX_AGE_S))
 }
 
 export function clearRefreshCookie(req, res) {
   res.setHeader('Set-Cookie', cookie(req, '', 0))
+}
+
+// The shared refresh-token slot. Sealed with the same key as the cookie, so a
+// dump of the store on its own yields nothing usable without SESSION_SECRET.
+let redis = null
+if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+  redis = new Redis({
+    url: process.env.KV_REST_API_URL,
+    token: process.env.KV_REST_API_TOKEN,
+  })
+}
+
+export function hasSharedStore() {
+  return redis !== null
+}
+
+const storeKey = sub => `qm:rt:${sub}`
+
+export async function putSharedRefreshToken(sub, refreshToken) {
+  if (!redis) return false
+  await redis.set(storeKey(sub), seal(refreshToken), { ex: MAX_AGE_S })
+  return true
+}
+
+export async function getSharedRefreshToken(sub) {
+  if (!redis) return null
+  const sealed = await redis.get(storeKey(sub))
+  return sealed ? unseal(sealed) : null
+}
+
+// Reading the account id out of Google's token response. The id_token comes
+// straight from Google over TLS in a response to our own authenticated
+// request, so decoding the payload is enough here — there's no third party in
+// the middle whose signature we'd need to check. Falls back to the userinfo
+// endpoint on the rare response that carries no id_token.
+export async function googleAccountId({ id_token, access_token }) {
+  if (id_token) {
+    const payload = String(id_token).split('.')[1]
+    if (payload) {
+      try {
+        const sub = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))?.sub
+        if (sub) return sub
+      } catch {
+        // Fall through to userinfo.
+      }
+    }
+  }
+  if (!access_token) return null
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    })
+    if (!res.ok) return null
+    return (await res.json())?.sub || null
+  } catch {
+    return null
+  }
 }
 
 // Shared by auth-exchange and auth-refresh: both POST form-encoded bodies to

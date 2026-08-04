@@ -24,12 +24,16 @@ The **authorization-code flow** with a server-held refresh token:
 1. `initCodeClient` opens the Google popup, which returns a one-time code.
 2. `POST /api/auth-exchange` trades that code for an access token *and* a
    refresh token, using the client secret. The refresh token is sealed with
-   AES-256-GCM and set as an httpOnly cookie. It never reaches page JavaScript.
-3. `POST /api/auth-refresh` mints a new access token from that cookie — on page
-   load, on a timer before expiry, and whenever the app returns to the
+   AES-256-GCM and written to one shared slot in Upstash, keyed by the Google
+   account id (`qm:rt:<sub>`). The browser gets an httpOnly cookie holding only
+   that account id, also sealed. The refresh token never reaches page
+   JavaScript, and the store holds nothing usable without `SESSION_SECRET`.
+3. `POST /api/auth-refresh` reads the account id from the cookie, fetches the
+   current refresh token from the shared slot, and mints a new access token —
+   on page load, on a timer before expiry, and whenever the app returns to the
    foreground. No iframes, no third-party cookies, so nothing for the browser
    to block.
-4. `POST /api/auth-logout` revokes the grant at Google and clears the cookie.
+4. `POST /api/auth-logout` clears the cookie on that device only.
 
 Access tokens are no longer written to `localStorage`; they live in memory only,
 so an XSS bug can't steal a stored token. Failures now surface on the sign-in
@@ -38,6 +42,37 @@ screen instead of failing silently.
 Session length is bounded by the refresh token, which for a **published** app
 does not expire on a fixed schedule. In practice this means staying signed in
 until you explicitly sign out or revoke access in your Google account.
+
+## Why the refresh token is shared rather than per-device
+
+The first version of this change gave each device its own sealed copy of the
+refresh token in its own cookie. That broke as soon as a second device signed
+in: Google does not guarantee that previously issued refresh tokens survive when
+it issues a new one for the same account and client, so signing in on the phone
+invalidated the laptop's token and vice versa. Observed 2026-08-03 — signing in
+on iOS immediately logged out both the macOS PWA and a desktop browser session.
+
+Keeping exactly one token per account, server-side, removes the race entirely:
+whichever sign-in happened most recently wins, and every other device picks that
+token up on its next refresh instead of holding a copy that may already be dead.
+`auth-refresh` also writes back any token Google rotates in, so the shared slot
+always holds the live one.
+
+Consequences worth knowing:
+
+- **`auth-logout` no longer calls Google's revoke endpoint.** Revoking ends the
+  grant for the whole account, which under a shared token would sign out every
+  other device — the opposite of what tapping "Sign out" on one device should
+  do. To cut off every device, remove QuestMaster's access in the Google
+  account's security settings.
+- **The shared store is required for long sessions.** If `KV_REST_API_URL` /
+  `KV_REST_API_TOKEN` are missing, `auth-exchange` returns `persistent: false`
+  with a warning rather than silently falling back to a per-device token, since
+  that fallback is precisely the arrangement that logs the other device out.
+- **Cookies issued before this change still work.** They carry the raw refresh
+  token; `readSession` recognises them as v1, and the next successful refresh
+  migrates them into the shared slot and reissues a v2 cookie. Nobody is signed
+  out by deploying this.
 
 ## Required setup
 
@@ -53,6 +88,7 @@ instead.
 | --- | --- |
 | `GOOGLE_CLIENT_SECRET` | Google no longer lets you view an existing client secret — only its last 4 characters. Use **+ Add secret** on the OAuth client to mint a new one, which is displayed once at creation. A client can hold several secrets at a time, so adding one does not break the existing one. |
 | `SESSION_SECRET` | 32 random bytes, base64. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Injected by the Upstash-for-Redis Vercel Marketplace integration. Previously optional (they only gated the AI rate limit); now **required for sign-in to persist**, since they back the shared refresh-token slot. Confirmed present on All Environments 2026-08-03. |
 
 After the new client secret is confirmed working, **Disable** the old one (this
 is reversible) and delete it only once nothing has broken.
