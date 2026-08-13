@@ -223,6 +223,7 @@ export default function Dashboard({ token, onSignOut }) {
   const bgmCtxRef = useRef(null)   // AudioContext for iOS-compatible volume
   const bgmGainRef = useRef(null)  // GainNode — audio.volume is read-only on iOS
   const bgmVolumeRef = useRef(settings.musicVolume ?? 0.3)
+  const bgmUnlockedRef = useRef(false) // first tap makes it audible — see unlock()
   const prevLevelRef = useRef(null)
   // lifetimeXp MUST be in this payload: the level/XP-bar display derives from
   // lifetimeXp (not spendable points), and computeGameStateMerge Math.max-es
@@ -322,20 +323,18 @@ export default function Dashboard({ token, onSignOut }) {
     document.addEventListener('visibilitychange', onVisible)
 
     // Start immediately, muted — every browser's autoplay policy (iOS
-    // included) always allows muted playback with no gesture, and unmuting
-    // right after play() resolves is permitted on most iOS versions too, so
-    // the music is already audible under the splash screen instead of
-    // waiting for a tap. This is the trick the splash originally shipped
-    // with; it got dropped in the 2026-07-05 refactor that routed volume
-    // through a GainNode (audio.volume is a no-op on iOS), leaving only the
-    // unmuted play() below, which iOS silently rejects without a gesture.
-    // Falls back to the gesture-driven unlock() when even muted autoplay is
-    // blocked (e.g. Low Power Mode).
+    // included) always allows muted playback with no gesture. This just gets
+    // the element decoding/running in the background: the AudioContext it
+    // feeds (below) starts 'suspended' on iOS and STAYS that way — silently
+    // eating the signal — until resumed inside a real gesture, which is a
+    // hard WebKit rule with no client-side workaround (confirmed: waiting
+    // before tapping shows the track already partway through, i.e. it really
+    // was playing, just gated shut). unlock() is what actually makes it
+    // audible, and rewinds to 0 so the song starts from the top instead of
+    // wherever it silently drifted to while waiting for the tap.
     initWebAudio()
     audio.muted = true
-    audio.play()
-      .then(() => { audio.muted = false })
-      .catch(() => { audio.muted = false })
+    audio.play().catch(() => {})
 
     // iOS: capture-phase ensures we're in the synchronous gesture context iOS
     // requires for audio.play() and AudioContext.resume(). Deliberately never
@@ -345,6 +344,10 @@ export default function Dashboard({ token, onSignOut }) {
     function unlock() {
       initWebAudio()
       resumeCtx()
+      if (!bgmUnlockedRef.current) {
+        bgmUnlockedRef.current = true
+        audio.currentTime = 0
+      }
       audio.muted = false
       if (audio.paused) audio.play().catch(() => {})
     }
