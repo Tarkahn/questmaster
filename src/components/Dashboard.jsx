@@ -302,9 +302,20 @@ export default function Dashboard({ token, onSignOut }) {
     // for good, while synthesized SFX kept working. So: retry play() on
     // wake, and keep the gesture listeners installed permanently as the
     // fallback for when iOS insists the play() come from a tap.
+    // The context can be non-running in two states: 'suspended' (created
+    // outside a gesture — iOS starts it that way) and iOS's non-standard
+    // 'interrupted' (after a phone call / Siri / backgrounding). Either way
+    // the element keeps "playing" into a dead graph: readyState 4, paused
+    // false, total silence — confirmed live via the Settings readout. Resume
+    // must therefore never be gated on the element being paused.
+    function resumeCtx() {
+      const c = bgmCtxRef.current
+      if (c && c.state !== 'running') c.resume().catch(() => {})
+    }
+
     function onVisible() {
       if (document.visibilityState !== 'visible') return
-      if (bgmCtxRef.current?.state === 'suspended') bgmCtxRef.current.resume()
+      resumeCtx()
       if (audio.paused) audio.play().catch(() => {})
     }
     document.addEventListener('visibilitychange', onVisible)
@@ -313,15 +324,15 @@ export default function Dashboard({ token, onSignOut }) {
     initWebAudio()
     audio.play().catch(() => {})
 
-    // iOS: capture-phase ensures we're in the synchronous gesture context
-    // iOS requires for audio.play() permission. Deliberately never removed —
-    // a paused element makes the next tap restart the music, and when it's
-    // already playing this is a no-op.
+    // iOS: capture-phase ensures we're in the synchronous gesture context iOS
+    // requires for audio.play() and AudioContext.resume(). Deliberately never
+    // removed. The resume comes BEFORE the paused check: the playing-but-
+    // silent state (element playing, context suspended) was exactly the case
+    // an early "already playing" return used to skip past.
     function unlock() {
-      if (!audio.paused) return
       initWebAudio()
-      if (bgmCtxRef.current?.state === 'suspended') bgmCtxRef.current.resume()
-      audio.play().catch(() => {})
+      resumeCtx()
+      if (audio.paused) audio.play().catch(() => {})
     }
     document.addEventListener('touchstart', unlock, true)
     document.addEventListener('touchend',   unlock, true)
