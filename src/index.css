@@ -81,21 +81,33 @@ body {
   letter-spacing: 0.5px;
 }
 
-/* Tap-to-enter prompt. The splash waits for this tap because iOS allows no
+/* Tap-to-enter button. The splash waits for this tap because iOS allows no
    audio before the first gesture — the tap is what lets the music start
-   under the load screen instead of after some later incidental touch. */
-.splash-tap {
-  margin-top: 18px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 1.5px;
-  color: var(--accent-light);
-  animation: splashTapPulse 1.6s ease-in-out infinite;
+   under the load screen instead of after some later incidental touch.
+   The whole splash accepts the tap; the button is the visible invitation,
+   sized and lit so it cannot be missed. */
+.splash-enter-btn {
+  margin-top: 28px;
+  padding: 16px 36px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), #5b21b6);
+  border: 1px solid var(--accent-light);
+  border-radius: var(--radius);
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.45);
+  animation: splashBtnPulse 1.8s ease-in-out infinite;
 }
 
-@keyframes splashTapPulse {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 1; }
+.splash-enter-btn:active {
+  transform: scale(0.97);
+}
+
+@keyframes splashBtnPulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(124, 58, 237, 0.35); }
+  50% { box-shadow: 0 4px 32px rgba(124, 58, 237, 0.75); }
 }
 
 @keyframes splashPulse {

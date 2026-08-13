@@ -29,7 +29,9 @@ export default function SplashScreen({ onDone }) {
         <div className="splash-emblem">⚔️</div>
         <h1 className="splash-title">QuestMaster</h1>
         <p className="splash-tagline">Your adventure awaits...</p>
-        <p className="splash-tap">· tap to enter the realm ·</p>
+        <button type="button" className="splash-enter-btn">
+          ⚔️ Enter the Realm
+        </button>
       </div>
     </div>
   )

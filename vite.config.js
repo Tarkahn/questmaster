@@ -66,6 +66,21 @@ export default defineConfig({
         navigateFallback: null,
         runtimeCaching: [
           {
+            // Background music, cached on first download so every later
+            // launch plays it instantly from disk. CacheFirst rather than
+            // precache because media elements need Range (partial-content)
+            // support — rangeRequests wires in the workbox plugin that
+            // serves byte ranges out of the cached response, without which
+            // iOS refuses to play cached audio at all.
+            urlPattern: /\/audio\/.*\.mp3$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'bgm',
+              rangeRequests: true,
+              expiration: { maxEntries: 4 },
+            },
+          },
+          {
             urlPattern: /^https:\/\/accounts\.google\.com\//,
             handler: 'NetworkOnly',
           },
