@@ -198,6 +198,21 @@ body {
   transform: scale(0.98);
 }
 
+/* Build + music-pipeline readout at the foot of Settings. Diagnostic, not
+   decorative: PWA caches make "which build is this device on?" a recurring
+   question, and iOS offers no console for the music player's state. */
+.settings-diag {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* Sign-in failure / expired-session notice above the button. Silent failures
    were the whole problem with the old auth flow — this is where they surface. */
 .signin-error {

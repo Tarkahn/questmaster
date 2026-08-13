@@ -45,7 +45,7 @@ function RevealPicker({ value, onChange, disabled }) {
   )
 }
 
-export default function SettingsModal({ settings, onSave, onReThemeAll, onClose, token }) {
+export default function SettingsModal({ settings, onSave, onReThemeAll, onClose, token, buildInfo, bgmStatus }) {
   const [local, setLocal] = useState({ revealMs: 5000, ...settings })
   const [saving, setSaving] = useState(false)
   const [retheming, setRetheming] = useState(false)
@@ -239,6 +239,13 @@ export default function SettingsModal({ settings, onSave, onReThemeAll, onClose,
           />
           <span className="settings-slider-value">{sfxPct}%</span>
         </div>
+
+        {(buildInfo || bgmStatus) && (
+          <div className="settings-diag">
+            {buildInfo && <div>Build {buildInfo}</div>}
+            {bgmStatus && <div>Music: {bgmStatus}</div>}
+          </div>
+        )}
 
         <div className="modal-actions">
           <button className="modal-btn modal-btn--cancel" onClick={onClose} disabled={saving}>Cancel</button>

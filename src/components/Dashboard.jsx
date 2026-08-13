@@ -341,6 +341,25 @@ export default function Dashboard({ token, onSignOut }) {
     if (bgmGainRef.current) bgmGainRef.current.gain.value = v
   }, [settings.musicVolume])
 
+  // One-line snapshot of the BGM pipeline, surfaced in Settings. Exists
+  // because iOS gives no console: readyState 0-4 (4 = fully loaded), network
+  // 0-3 (3 = no usable source), err codes 1 abort / 2 network / 3 decode /
+  // 4 format unsupported, plus the AudioContext state ('interrupted' is an
+  // iOS-only state that a 'suspended'-only check would miss) and gain value.
+  function describeBgmState() {
+    const a = bgmRef.current
+    if (!a) return 'no player element'
+    const parts = [
+      a.paused ? 'paused' : 'playing',
+      `ready ${a.readyState}`,
+      `net ${a.networkState}`,
+      a.error ? `err ${a.error.code}` : 'no err',
+      `ctx ${bgmCtxRef.current?.state ?? 'none'}`,
+      `gain ${bgmGainRef.current ? bgmGainRef.current.gain.value.toFixed(2) : 'none'}`,
+    ]
+    return parts.join(' · ')
+  }
+
   // One-time theme cache sync on mount: merge Drive cache into local so both
   // devices show the same D&D themed titles. Local wins on conflicts so the
   // user never sees a title change mid-session.
@@ -1861,6 +1880,8 @@ export default function Dashboard({ token, onSignOut }) {
           onReThemeAll={handleReThemeAll}
           onClose={() => setShowSettings(false)}
           token={token}
+          buildInfo={typeof __BUILD_STAMP__ !== 'undefined' ? __BUILD_STAMP__ : 'dev'}
+          bgmStatus={describeBgmState()}
         />
       )}
       {showCharacterSelect && (

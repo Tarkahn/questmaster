@@ -1,8 +1,25 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { execSync } from 'node:child_process'
+
+// Build stamp shown in Settings so anyone can read exactly which build a
+// device is running — PWA caches make "did the update actually arrive?" a
+// recurring diagnostic question. Vercel exposes the commit as an env var;
+// local builds fall back to asking git directly.
+function buildStamp() {
+  let commit = process.env.VERCEL_GIT_COMMIT_SHA || ''
+  if (!commit) {
+    try { commit = execSync('git rev-parse HEAD').toString().trim() } catch { commit = 'unknown' }
+  }
+  const date = new Date().toISOString().slice(0, 16).replace('T', ' ')
+  return `${commit.slice(0, 7)} · ${date} UTC`
+}
 
 export default defineConfig({
+  define: {
+    __BUILD_STAMP__: JSON.stringify(buildStamp()),
+  },
   plugins: [
     react(),
     VitePWA({
