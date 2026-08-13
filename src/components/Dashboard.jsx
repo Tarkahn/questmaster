@@ -294,10 +294,18 @@ export default function Dashboard({ token, onSignOut }) {
     // and the volume control working only "occasionally." A suspended
     // context, by contrast, is always safe to resume without touching the
     // element/graph at all, so that's the one thing done here.
+    // Backgrounding pauses the <audio> element on iOS, and resuming the
+    // AudioContext alone does NOT unpause it — the element needs its own
+    // play() call. This went unnoticed while hourly logouts forced full
+    // reloads (each sign-in remounted everything and restarted the music);
+    // once sessions became long-lived, the first backgrounding killed BGM
+    // for good, while synthesized SFX kept working. So: retry play() on
+    // wake, and keep the gesture listeners installed permanently as the
+    // fallback for when iOS insists the play() come from a tap.
     function onVisible() {
-      if (document.visibilityState === 'visible' && bgmCtxRef.current?.state === 'suspended') {
-        bgmCtxRef.current.resume()
-      }
+      if (document.visibilityState !== 'visible') return
+      if (bgmCtxRef.current?.state === 'suspended') bgmCtxRef.current.resume()
+      if (audio.paused) audio.play().catch(() => {})
     }
     document.addEventListener('visibilitychange', onVisible)
 
@@ -306,23 +314,22 @@ export default function Dashboard({ token, onSignOut }) {
     audio.play().catch(() => {})
 
     // iOS: capture-phase ensures we're in the synchronous gesture context
-    // iOS requires for audio.play() permission
+    // iOS requires for audio.play() permission. Deliberately never removed —
+    // a paused element makes the next tap restart the music, and when it's
+    // already playing this is a no-op.
     function unlock() {
-      if (!audio.paused) { cleanup(); return }
+      if (!audio.paused) return
       initWebAudio()
       if (bgmCtxRef.current?.state === 'suspended') bgmCtxRef.current.resume()
-      audio.play().then(cleanup).catch(() => {})
-    }
-    function cleanup() {
-      document.removeEventListener('touchstart', unlock, true)
-      document.removeEventListener('touchend',   unlock, true)
-      document.removeEventListener('click',      unlock, true)
+      audio.play().catch(() => {})
     }
     document.addEventListener('touchstart', unlock, true)
     document.addEventListener('touchend',   unlock, true)
     document.addEventListener('click',      unlock, true)
     return () => {
-      cleanup()
+      document.removeEventListener('touchstart', unlock, true)
+      document.removeEventListener('touchend',   unlock, true)
+      document.removeEventListener('click',      unlock, true)
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [])
