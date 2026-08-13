@@ -81,6 +81,23 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* Tap-to-enter prompt. The splash waits for this tap because iOS allows no
+   audio before the first gesture — the tap is what lets the music start
+   under the load screen instead of after some later incidental touch. */
+.splash-tap {
+  margin-top: 18px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--accent-light);
+  animation: splashTapPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes splashTapPulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 @keyframes splashPulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.1); filter: drop-shadow(0 0 32px rgba(124, 58, 237, 0.9)); }
