@@ -7,7 +7,14 @@ function parseDueDate(due) {
   return dueDateOnly(due) || ''
 }
 
-export default function EditQuestModal({ task, onClose, onSave, onDelete, defaultReminderMinutes = 30 }) {
+// `recurringDef` is the recurring definition that materialized this quest, or
+// null for a one-off. Google Tasks has no native recurrence, so a repeating
+// quest is a fresh task generated each due day from a def held in Drive —
+// which is why deleting the task alone leaves the def to generate another one
+// tomorrow, and why the delete offers a this-one/all-repeats choice the way
+// Google's own recurring items do.
+export default function EditQuestModal({ task, onClose, onSave, onDelete, defaultReminderMinutes = 30, recurringDef = null }) {
+  const isRecurring = Boolean(recurringDef)
   const [title, setTitle] = useState(task.title || '')
   const [due, setDue] = useState(parseDueDate(task.due))
   const existingTime = parseQuestTime(task.notes)
@@ -39,11 +46,11 @@ export default function EditQuestModal({ task, onClose, onSave, onDelete, defaul
     }
   }
 
-  async function handleDelete() {
+  async function handleDelete(scope) {
     if (!confirmDelete) { setConfirmDelete(true); return }
     setDeleting(true)
     try {
-      await onDelete(task.id)
+      await onDelete(task.id, { series: scope === 'series' })
     } catch (err) {
       setError(err.message || 'Could not delete quest.')
       setDeleting(false)
@@ -54,6 +61,9 @@ export default function EditQuestModal({ task, onClose, onSave, onDelete, defaul
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card" onClick={e => e.stopPropagation()}>
         <h2 className="modal-title">✏️ Edit Quest</h2>
+        {isRecurring && (
+          <p className="modal-subtitle">🔁 Repeating quest — edits apply only to today's copy.</p>
+        )}
 
         <form onSubmit={handleSubmit} className="quest-form">
           <label className="form-label">
@@ -113,14 +123,35 @@ export default function EditQuestModal({ task, onClose, onSave, onDelete, defaul
           {error && <div className="error">{error}</div>}
 
           <div className="modal-actions">
-            <button
-              type="button"
-              className={`modal-btn modal-btn--delete${confirmDelete ? ' modal-btn--confirm' : ''}`}
-              onClick={handleDelete}
-              disabled={saving || deleting}
-            >
-              {deleting ? 'Deleting…' : confirmDelete ? 'Confirm?' : '🗑 Delete'}
-            </button>
+            {isRecurring && confirmDelete && !deleting ? (
+              <div className="recur-delete-choice">
+                <button
+                  type="button"
+                  className="modal-btn modal-btn--delete modal-btn--confirm"
+                  onClick={() => handleDelete('single')}
+                  disabled={saving}
+                >
+                  This one
+                </button>
+                <button
+                  type="button"
+                  className="modal-btn modal-btn--delete modal-btn--confirm"
+                  onClick={() => handleDelete('series')}
+                  disabled={saving}
+                >
+                  All repeats
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className={`modal-btn modal-btn--delete${confirmDelete ? ' modal-btn--confirm' : ''}`}
+                onClick={() => handleDelete('single')}
+                disabled={saving || deleting}
+              >
+                {deleting ? 'Deleting…' : confirmDelete ? 'Confirm?' : '🗑 Delete'}
+              </button>
+            )}
             <div className="modal-actions-right">
               <button type="button" className="modal-btn modal-btn--cancel" onClick={onClose} disabled={saving || deleting}>
                 Cancel

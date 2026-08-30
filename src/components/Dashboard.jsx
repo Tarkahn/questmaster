@@ -1411,11 +1411,27 @@ export default function Dashboard({ token, onSignOut }) {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, notes: updated.notes } : t))
   }
 
-  async function handleDeleteTask(taskId) {
+  // A repeating quest is a Google Task generated each due day from a recurring
+  // def, so deleting the task alone left the def to generate another tomorrow —
+  // the quest appeared undeletable. `series` removes the def itself.
+  async function handleDeleteTask(taskId, { series = false } = {}) {
+    const def = recurring.find(d => d.lastTaskId === taskId)
     await deleteTask(token, taskId)
     setEditingTask(null)
     setTasks(prev => prev.filter(t => t.id !== taskId))
-    setToast('🗑 Quest removed.')
+    if (def) {
+      // Deleting is deliberate, so it is never recorded as a miss — this drops
+      // only the link to today's task, leaving streak and missedCount alone.
+      // lastMaterializedDate deliberately stays on today: clearing it would let
+      // the materialization pass recreate the quest within this same session.
+      // It simply returns on its next scheduled day, as Google's do.
+      const updated = series
+        ? recurring.filter(d => d.id !== def.id)
+        : recurring.map(d => d.id === def.id ? { ...d, lastTaskId: null } : d)
+      setRecurring(updated)
+      saveRecurringToDrive(token, saveRecurring(updated))
+    }
+    setToast(series ? '🗑 Quest and all its repeats removed.' : '🗑 Quest removed.')
   }
 
   async function handleSaveEvent(eventId, data) {
@@ -1866,6 +1882,7 @@ export default function Dashboard({ token, onSignOut }) {
           onSave={handleSaveTask}
           onDelete={handleDeleteTask}
           defaultReminderMinutes={settings.defaultReminderMinutes}
+          recurringDef={recurring.find(d => d.lastTaskId === editingTask.id) || null}
         />
       )}
       {checklistTask && (
