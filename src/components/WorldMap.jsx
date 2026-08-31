@@ -327,29 +327,55 @@ export default function WorldMap({ tasks = [], events = [], locations = {}, onPi
       center: [20, 0], zoom: 2, zoomControl: false,
       zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 100,
     })
+    // Stadia auth is domain-based: the deployed domain is registered in the
+    // Stadia dashboard and localhost is allowed keyless, so tile URLs normally
+    // carry no credential at all. The key must only be appended when one is
+    // actually set — an unconditional `?api_key=${KEY}` sent the literal string
+    // "undefined" when unset, and an explicit bad key makes Stadia reject the
+    // request outright rather than falling through to domain auth. That is what
+    // turned a stale key into a hard 401 on every tile.
     const KEY = import.meta.env.VITE_STADIA_API_KEY
+    const AUTH = KEY ? `?api_key=${KEY}` : ''
 
     map.createPane('tonerLabelsPane')
     map.getPane('tonerLabelsPane').style.zIndex = 300
     map.getPane('tonerLabelsPane').style.pointerEvents = 'none'
 
-    L.tileLayer(
-      `https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg?api_key=${KEY}`,
+    const watercolor = L.tileLayer(
+      `https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg${AUTH}`,
       {
         attribution: 'Map tiles by <a href="http://stamen.com" target="_blank">Stamen Design</a>, CC BY 3.0 — Data © <a href="http://openstreetmap.org" target="_blank">OpenStreetMap</a>',
         maxNativeZoom: 16, maxZoom: 19,
       }
     ).addTo(map)
 
-    L.tileLayer(
-      `https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}.png?api_key=${KEY}`,
+    const tonerLines = L.tileLayer(
+      `https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}.png${AUTH}`,
       { opacity: 0.45, maxNativeZoom: 16, maxZoom: 19 }
     ).addTo(map)
 
-    L.tileLayer(
-      `https://tiles.stadiamaps.com/tiles/stamen_toner_labels/{z}/{x}/{y}.png?api_key=${KEY}`,
+    const tonerLabels = L.tileLayer(
+      `https://tiles.stadiamaps.com/tiles/stamen_toner_labels/{z}/{x}/{y}.png${AUTH}`,
       { pane: 'tonerLabelsPane', opacity: 0.6, maxNativeZoom: 16, maxZoom: 19 }
     ).addTo(map)
+
+    // A deployment on a domain that isn't registered with Stadia (and with no
+    // key) gets 401s for every tile, which left a blank void. If Stadia errors
+    // before a single tile has loaded, swap to plain OpenStreetMap so the map
+    // always works; transient errors after a successful load don't trigger it.
+    let stadiaLoaded = false
+    let fellBack = false
+    watercolor.on('tileload', () => { stadiaLoaded = true })
+    watercolor.on('tileerror', () => {
+      if (stadiaLoaded || fellBack) return
+      fellBack = true
+      console.warn('Stadia tiles unavailable (domain not registered with Stadia and no API key set) — falling back to OpenStreetMap.')
+      ;[watercolor, tonerLines, tonerLabels].forEach(l => map.removeLayer(l))
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="http://openstreetmap.org" target="_blank">OpenStreetMap</a> contributors',
+        maxNativeZoom: 19, maxZoom: 19,
+      }).addTo(map)
+    })
 
     L.control.zoom({ position: 'bottomright' }).addTo(map)
 
