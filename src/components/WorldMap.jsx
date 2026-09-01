@@ -359,23 +359,27 @@ export default function WorldMap({ tasks = [], events = [], locations = {}, onPi
       { pane: 'tonerLabelsPane', opacity: 0.6, maxNativeZoom: 16, maxZoom: 19 }
     ).addTo(map)
 
-    // A deployment on a domain that isn't registered with Stadia (and with no
-    // key) gets 401s for every tile, which left a blank void. If Stadia errors
-    // before a single tile has loaded, swap to plain OpenStreetMap so the map
-    // always works; transient errors after a successful load don't trigger it.
-    let stadiaLoaded = false
-    let fellBack = false
-    watercolor.on('tileload', () => { stadiaLoaded = true })
-    watercolor.on('tileerror', () => {
-      if (stadiaLoaded || fellBack) return
-      fellBack = true
-      console.warn('Stadia tiles unavailable (domain not registered with Stadia and no API key set) — falling back to OpenStreetMap.')
+    // On an unregistered domain Stadia refuses every tile — but it answers 401
+    // with a valid 512x512 PNG saying so, and a browser paints an image body
+    // whatever the status code is. So Leaflet fires `tileload`, never
+    // `tileerror`, and a listener-based fallback cannot see the failure: the
+    // map fills with Stadia's "401" notice instead. Probe one tile with fetch()
+    // (Stadia sends access-control-allow-origin: *, so the real status is
+    // readable) and swap to OpenStreetMap when it isn't ok.
+    let swapped = false
+    function fallBackToOSM(why) {
+      if (swapped || !map.getPane('tonerLabelsPane')) return
+      swapped = true
+      console.warn(`Stadia tiles unavailable (${why}) — falling back to OpenStreetMap.`)
       ;[watercolor, tonerLines, tonerLabels].forEach(l => map.removeLayer(l))
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="http://openstreetmap.org" target="_blank">OpenStreetMap</a> contributors',
         maxNativeZoom: 19, maxZoom: 19,
       }).addTo(map)
-    })
+    }
+    fetch(`https://tiles.stadiamaps.com/tiles/stamen_watercolor/0/0/0.jpg${AUTH}`)
+      .then(res => { if (!res.ok) fallBackToOSM(`HTTP ${res.status}`) })
+      .catch(() => fallBackToOSM('network error'))
 
     L.control.zoom({ position: 'bottomright' }).addTo(map)
 
