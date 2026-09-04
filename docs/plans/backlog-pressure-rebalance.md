@@ -60,11 +60,18 @@ The root fix. New knob in `PENALTY_CONFIG` (`src/utils/penalties.js`):
 backlogExponent: 0.5,   // 1 = old linear behaviour, 0.5 = sqrt(N)
 ```
 
-Applied to the **benign d2 portion only**. In the `tally()` loop, the summed
-benign HP for a group of N items is scaled by `Math.pow(N, backlogExponent - 1)`
-and redistributed across `perItem` proportionally — the same idiom the existing
-`maxDailyHpLoss` block already uses, so per-card tolls continue to add up to the
-reported total.
+Applied to the **benign d2 portion only**. In the `tally()` loop, each item's
+raw benign roll is scaled by `Math.pow(N, backlogExponent - 1)`, and the scaled
+values are redistributed across `perItem` by **running-remainder (error
+diffusion) rounding**: accumulate the scaled values, and give each item
+`Math.round(cumulative) - roundedSoFar`. That keeps the per-card badges summing
+exactly to the scaled total.
+
+Do **not** round each item independently as `Math.round(raw * backlogScale)`.
+At N=40 the scale is ~0.158, so an average roll of 1.5 becomes 0.24 — every item
+rounds to zero and the entire benign toll silently disappears. (An earlier draft
+of this plan said "redistributed proportionally", which reads as exactly that
+naive form; it was caught during implementation, not in review.)
 
 **The overdue ramp stays fully linear and per-quest, and bosses are untouched.**
 That is the design line: merely *having* captured tasks stops being punishing,
