@@ -21,6 +21,12 @@ const LEDGER_KEY = 'qm_penalty_ledger'
 // All tunable knobs live here.
 export const PENALTY_CONFIG = {
   benignHpDie: 2,        // d2 everyday "battle cost" on every open quest/sidequest
+  // Rebalanced 2026-09-03 — damage scaled with the stock of open quests while
+  // income scales with the flow of completions, so a backlog (the normal
+  // resting state of a task app) bled the player out. Applied only to the
+  // benign d2 portion below; the overdue ramp stays fully linear and per-quest
+  // so a missed dated commitment still hurts exactly as much as it did before.
+  backlogExponent: 0.5,  // 1 = old linear behaviour, 0.5 = sqrt(N)
   overdueRampMax: 5,     // cap on the days-late multiplier for overdue dated quests
   // Rebalanced 2026-07-05 — the ramp used to reuse missionHpDie/missionXpDie
   // (d6/d10), so a quest overdue just 2 days could out-hurt a genuinely
@@ -247,11 +253,27 @@ export function runPenaltyPass({ tasks = [], subtasks = [], habits = [], charact
     // sunk mission.
     const tally = (items, label, icon) => {
       if (!items.length) return
+      // The benign d2 cost is charged per-quest, so a backlog of N quests summed
+      // to N * (linear) daily HP — the actual complaint. Scale the group's summed
+      // benign HP by N^(backlogExponent - 1) (1 = old linear, 0.5 = sqrt(N)) and
+      // redistribute it across perItem with running-remainder rounding — so the
+      // per-card badges always sum to the scaled total even though individual
+      // rolls are too small to round sensibly on their own (a naive per-item
+      // Math.round(raw * backlogScale) collapses to 0 for most items once N is
+      // large, undershooting the intended total) — merely *having* a backlog
+      // stops compounding, while the overdue ramp below stays untouched and
+      // fully linear.
+      const backlogScale = Math.pow(items.length, PENALTY_CONFIG.backlogExponent - 1)
       let hp = 0, xp = 0, lateCount = 0
+      let benignCumulative = 0, benignRounded = 0
       for (const it of items) {
         const tier = getDifficulty(it.id, difficultyMemory) || 'normal'
         const diffMult = PENALTY_CONFIG.difficultyPenaltyMult[tier] ?? 1
-        let itemHp = applyResist(roll(PENALTY_CONFIG.benignHpDie) * hardMult * diffMult, resist.hp)
+        const rawBenignHp = applyResist(roll(PENALTY_CONFIG.benignHpDie) * hardMult * diffMult, resist.hp)
+        benignCumulative += rawBenignHp * backlogScale
+        const roundedSoFar = Math.round(benignCumulative)
+        let itemHp = roundedSoFar - benignRounded
+        benignRounded = roundedSoFar
         let itemXp = 0
         const dl = daysLate(it.due, todayMs)
         if (it.due && dl >= 1) {

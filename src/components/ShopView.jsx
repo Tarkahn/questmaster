@@ -29,7 +29,7 @@ function getState(item, character, coins) {
   if (hasAny && !forClass) return { type: 'cross-class', sellPrice }
 
   if (item.consumable) {
-    if (count > 0) return { type: 'use', count, sellPrice }
+    if (count > 0) return { type: 'use', count, sellPrice, canBuy: canAfford }
     return canAfford ? { type: 'buy' } : { type: 'locked' }
   }
   if (equipped)            return { type: 'equipped', sellPrice }
@@ -116,7 +116,7 @@ export default function ShopView({ character, coins, onBuy, onEquip, onUnequip, 
                 )}
               </div>
               <div className="item-row-action">
-                {(state.type === 'buy' || state.type === 'locked') && (
+                {(state.type === 'buy' || state.type === 'locked' || (state.type === 'use' && state.canBuy)) && (
                   <span className="item-row-cost">🪙 {item.cost}</span>
                 )}
                 <PrimaryAction state={state} item={item} onBuy={onBuy} onEquip={onEquip} onUnequip={onUnequip} onUse={onUse} />
@@ -141,9 +141,14 @@ function PrimaryAction({ state, item, onBuy, onEquip, onUnequip, onUse }) {
     case 'equip':
       return <button className="item-btn item-btn--equip" onClick={() => onEquip(item.id)}>Equip</button>
     case 'use':
-      return <button className="item-btn item-btn--use" onClick={() => onUse(item.id)}>
-        Use{state.count > 1 ? ` ×${state.count}` : ''}
-      </button>
+      return <>
+        <button className="item-btn item-btn--use" onClick={() => onUse(item.id)}>
+          Use{state.count > 1 ? ` ×${state.count}` : ''}
+        </button>
+        {state.canBuy && (
+          <button className="item-btn item-btn--buy" onClick={() => onBuy(item.id)}>Buy</button>
+        )}
+      </>
     case 'buy':
       return <button className="item-btn item-btn--buy" onClick={() => onBuy(item.id)}>Buy</button>
     case 'owned':
