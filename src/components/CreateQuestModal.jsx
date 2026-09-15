@@ -13,6 +13,20 @@ const PRESETS = [
   { label: 'Custom',   days: null },
 ]
 
+// Longer periods: same date each cycle, not a weekday pattern — see
+// docs/plans/longer-repeat-periods.md. Selecting one of these hides the
+// weekday toggles and shows a "Starts on" date picker instead.
+const SCHEDULE_PRESETS = [
+  { label: 'Every 2 weeks', schedule: { unit: 'week', every: 2 } },
+  { label: 'Monthly',       schedule: { unit: 'month', every: 1 } },
+  { label: 'Quarterly',     schedule: { unit: 'month', every: 3 } },
+  { label: 'Yearly',        schedule: { unit: 'year', every: 1 } },
+]
+
+function todayLocalStr() {
+  return new Date().toLocaleDateString('en-CA')
+}
+
 function matchPreset(days) {
   const key = [...days].sort((a,b) => a-b).join()
   if (key === '0,1,2,3,4,5,6') return 'Daily'
@@ -36,6 +50,8 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring,
   const [repeats, setRepeats]           = useState(false)
   const [days, setDays]                 = useState([1,2,3,4,5])
   const [preset, setPreset]             = useState('Weekdays')
+  const [schedule, setSchedule]         = useState(null) // { unit, every } while a schedule preset is active
+  const [scheduleStart, setScheduleStart] = useState(() => todayLocalStr())
 
   function handleDueChange(val) {
     setDue(val)
@@ -44,7 +60,13 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring,
 
   function applyPreset(p) {
     setPreset(p.label)
+    setSchedule(null)
     if (p.days) setDays(p.days)
+  }
+
+  function applySchedulePreset(p) {
+    setPreset(p.label)
+    setSchedule(p.schedule)
   }
 
   function toggleDay(d) {
@@ -56,7 +78,7 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring,
   async function handleSubmit(e) {
     e.preventDefault()
     if (!title.trim() || saving) return
-    if (repeats && days.length === 0) return
+    if (repeats && !schedule && days.length === 0) return
     setSaving(true)
     setError(null)
     try {
@@ -64,7 +86,8 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring,
         await onCreateRecurring({
           title: title.trim(),
           notes: notes.trim() || undefined,
-          days: [...days].sort((a,b) => a-b),
+          days: schedule ? [] : [...days].sort((a,b) => a-b),
+          schedule: schedule ? { ...schedule, start: scheduleStart } : undefined,
           dueTime: showRecurringTime ? recurringTime : undefined,
           reminderMinutes: showRecurringTime ? recurringReminderMinutes : undefined,
         })
@@ -174,23 +197,41 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring,
                     {p.label}
                   </button>
                 ))}
-              </div>
-              <div className="recurring-days">
-                {DAY_LABELS.map((label, i) => (
+                {SCHEDULE_PRESETS.map(p => (
                   <button
-                    key={i}
+                    key={p.label}
                     type="button"
-                    className={`recurring-day-btn${days.includes(i) ? ' recurring-day-btn--on' : ''}`}
-                    onClick={() => toggleDay(i)}
-                    aria-label={DAY_FULL[i]}
-                    aria-pressed={days.includes(i)}
+                    className={`recurring-preset-btn${preset === p.label ? ' recurring-preset-btn--active' : ''}`}
+                    onClick={() => applySchedulePreset(p)}
                   >
-                    {label}
+                    {p.label}
                   </button>
                 ))}
               </div>
-              {days.length === 0 && (
+              {!schedule && (
+                <div className="recurring-days">
+                  {DAY_LABELS.map((label, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`recurring-day-btn${days.includes(i) ? ' recurring-day-btn--on' : ''}`}
+                      onClick={() => toggleDay(i)}
+                      aria-label={DAY_FULL[i]}
+                      aria-pressed={days.includes(i)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!schedule && days.length === 0 && (
                 <p className="recurring-day-warn">Select at least one day.</p>
+              )}
+              {schedule && (
+                <div className="form-label" style={{ marginTop: 12 }}>
+                  Starts on
+                  <DatePicker value={scheduleStart} onChange={setScheduleStart} />
+                </div>
               )}
               <label className="quest-time-toggle" style={{ marginTop: 12 }}>
                 <input
@@ -198,7 +239,7 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring,
                   checked={showRecurringTime}
                   onChange={e => setShowRecurringTime(e.target.checked)}
                 />
-                <span>⏰ Set a daily time <span className="form-optional">(Google Calendar reminder)</span></span>
+                <span>⏰ Set a time <span className="form-optional">(Google Calendar reminder)</span></span>
               </label>
               {showRecurringTime && (
                 <div className="quest-time-picker">
@@ -226,7 +267,7 @@ export default function CreateQuestModal({ onClose, onCreate, onCreateRecurring,
             <button
               type="submit"
               className="modal-btn modal-btn--create"
-              disabled={!title.trim() || saving || (repeats && days.length === 0)}
+              disabled={!title.trim() || saving || (repeats && !schedule && days.length === 0)}
             >
               {saving ? 'Summoning...' : repeats ? 'Create Recurring' : 'Summon Quest'}
             </button>

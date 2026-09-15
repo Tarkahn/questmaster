@@ -1717,13 +1717,13 @@ export default function Dashboard({ token, onSignOut }) {
     setToast(`🐉 ${newHabit.boss.name} has returned for a rematch!`)
   }
 
-  function handleCreateRecurring({ title, notes, days, dueTime, reminderMinutes }) {
-    const def = createRecurringDef({ title, notes, days, dueTime, reminderMinutes })
+  function handleCreateRecurring({ title, notes, days, dueTime, reminderMinutes, schedule }) {
+    const def = createRecurringDef({ title, notes, days, dueTime, reminderMinutes, schedule })
     const updated = [...recurring, def]
     setRecurring(updated)
     saveRecurringToDrive(token, saveRecurring(updated))
     const timeStr = dueTime ? ` at ${formatQuestTime(dueTime)}` : ''
-    setToast(`🔄 "${title}" will repeat ${scheduleLabel(days)}${timeStr}`)
+    setToast(`🔄 "${title}" will repeat ${scheduleLabel(def)}${timeStr}`)
   }
 
   function handleDeleteRecurring(id) {
@@ -2346,7 +2346,7 @@ export default function Dashboard({ token, onSignOut }) {
                           {themedTitles[def.id] || def.title}
                         </span>
                         <span className="recurring-row-schedule">
-                          {scheduleLabel(def.days)}{def.dueTime ? ` · ⏰ ${formatQuestTime(def.dueTime)}` : ''}
+                          {scheduleLabel(def)}{def.dueTime ? ` · ⏰ ${formatQuestTime(def.dueTime)}` : ''}
                         </span>
                       </div>
                       <div className="recurring-row-actions">

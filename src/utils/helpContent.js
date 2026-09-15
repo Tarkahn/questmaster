@@ -36,7 +36,8 @@ export const HELP = {
   'recurring': {
     title: '🔄 Recurring Quests',
     body: [
-      'These are scheduled quests that automatically create a new task in Google Tasks on the days you specify — daily, weekdays, specific days of the week, etc.',
+      'These are scheduled quests that automatically create a new task in Google Tasks on the days you specify — daily, weekdays, specific days of the week, every 2 weeks, monthly, quarterly, or yearly.',
+      'If the app is closed on the scheduled day, the quest catches up the next time you open it — it just appears then instead.',
       'If you don\'t complete a recurring quest before the next scheduled day, the old task is removed, your streak resets to zero, and a small XP penalty is applied.',
       'Tap ⏸ to pause a recurring quest (no new tasks created while paused). Tap ✕ to permanently delete the schedule.',
     ],
