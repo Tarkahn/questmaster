@@ -5,12 +5,13 @@ Handoff: `docs/handoff/longer-repeat-periods-implement.md`
 
 ## Headline
 
-**Shipped:** questmaster (Vercel, questmaster-rouge.vercel.app) is live in
-production with every-2-weeks / monthly / quarterly / yearly repeat
-schedules, uniform catch-up for all recurring quests, and the new UI presets.
-questmaster-standalone (go.tarkahn.cc) has the identical code change built
-and committed locally but **NOT pushed** — the real-data dry run against its
-D1 store could not be completed (see Needs a decision).
+**Shipped:** both apps are live in production with every-2-weeks / monthly /
+quarterly / yearly repeat schedules, uniform catch-up for all recurring
+quests, and the new UI presets — questmaster (Vercel,
+questmaster-rouge.vercel.app) and questmaster-standalone (Cloudflare Worker,
+go.tarkahn.cc). The standalone push was completed in a follow-up once the
+planner unblocked its dry run via `wrangler` — see "Standalone follow-up"
+below for that half.
 
 **Numbers:**
 - Check script assertions: 39/39 passed in both repos (questmaster and
@@ -19,30 +20,18 @@ D1 store could not be completed (see Needs a decision).
   Google Drive `questmaster-recurring.json`, all legacy weekday-pattern defs
   (no schedule field). Old-vs-new `getDueToday` mismatch count: **0**. None
   are due today (2026-09-15) under either the old or new rule.
+- Real-data dry run (questmaster-standalone): the D1 `kv` table has **no row**
+  for key `recurring` for either of its 2 users — nobody has created a
+  recurring quest in this app yet. Old-vs-new mismatch count: **0** (nothing
+  to compare).
 - questmaster build: passed (`npm run build`, 105 modules).
 - questmaster-standalone build: passed (`npm run build`, 106 modules).
 - questmaster pushed SHA: `5f18d6b3e20e7131cc493fc9da81d6dfe0bafa4a`.
-- questmaster-standalone: committed locally at `45b3a8e`, **not pushed**.
+- questmaster-standalone pushed SHA: `e96626527113b5d35c0b67eb4bb7949ea7b1ea81`.
 
-**Needs a decision:** questmaster-standalone's dry run is blocked because
-this session's browser has no signed-in session for go.tarkahn.cc (magic-link
-auth, separate from questmaster's Google sign-in) — `GET /api/kv/recurring`
-returned `401 Unauthorized`, and the session cookie is HttpOnly so there's no
-value to copy into a curl command either. To unblock: sign in to
-`https://go.tarkahn.cc` in a browser (magic-link email), then in that tab's
-DevTools console run this read-only command yourself:
-
-```js
-fetch('/api/kv/recurring').then(r => r.json()).then(v => console.log(JSON.stringify(v)))
-```
-
-Paste the result back (or just the count/titles) and I'll re-run the same
-old-vs-new comparison and, if clean, build/push/verify the standalone deploy
-in a follow-up. I did not substitute invented defs — nothing was assumed.
+**Needs a decision:** none.
 
 **Not done:**
-- questmaster-standalone push + Cloudflare Worker deploy + live-bundle
-  verification (blocked on the above).
 - Plan step 6 (user's own manual checks in each app) — explicitly the user's,
   not attempted here.
 
@@ -99,7 +88,7 @@ in a follow-up. I did not substitute invented defs — nothing was assumed.
   Live bundle (`assets/index-BsCHcFOE.js`) contains the new label strings:
   "Every 2 weeks", "Quarterly", "Monthly on the", "Yearly", "Starts on".
 
-### questmaster-standalone (blocked before push)
+### questmaster-standalone (code + build, from the initial pass)
 
 - Same four files changed identically in substance, wording preserved per
   repo (e.g. "Adds a quest to your list" vs "Adds a task to Google Tasks",
@@ -109,19 +98,49 @@ in a follow-up. I did not substitute invented defs — nothing was assumed.
   updated to this repo's own pre-change HEAD, `e6a439e`. 39/39 passed here
   too.
 - Build passed (`npm run build`, 106 modules).
-- Committed locally as `45b3a8e` (**not pushed** — `git status` confirms
-  `ahead of origin/main by 1 commit`).
 - Confirmed which branch triggers the deploy per plan step 5:
   `.github/workflows/deploy.yml` triggers on push to `main`.
-- Dry run attempt: navigated the browser to `https://go.tarkahn.cc` and ran
-  `fetch('/api/kv/recurring', {credentials:'include'})` — `401 Unauthorized`,
-  `document.cookie` empty (the session cookie is HttpOnly regardless, so it
-  couldn't be read out even if present). This repo's auth is a separate
-  magic-link/email flow from questmaster's Google sign-in, and no signed-in
-  session exists in this browser profile for this domain. Per the handoff's
-  stop condition ("the real-data read is refused or you can't reach the data
-  read-only"), stopped here rather than guessing or substituting invented
-  defs.
+- First dry-run attempt (browser): navigated to `https://go.tarkahn.cc` and
+  ran `fetch('/api/kv/recurring', {credentials:'include'})` —
+  `401 Unauthorized`, `document.cookie` empty (the session cookie is HttpOnly
+  regardless, so it couldn't be read out even if present). This repo's auth
+  is a separate magic-link/email flow from questmaster's Google sign-in, and
+  no signed-in session existed in this browser profile for this domain. Per
+  the handoff's stop condition, stopped there rather than guessing or
+  substituting invented defs, and committed the change locally, unpushed, as
+  `45b3a8e`.
+
+## Standalone follow-up (unblocked via wrangler, completed)
+
+The planner pointed out `npx wrangler` was already signed in to the user's
+Cloudflare account in this repo, so the D1 `kv` row plan step 5 names as the
+source didn't need a browser session at all.
+
+- Checked `wrangler.json`/`migrations/0001_auth.sql` first per the
+  instruction: database name `questmaster-db`, table `kv(user_id, key,
+  value, updated_at)`, primary key `(user_id, key)`.
+- Ran, read-only:
+  `npx wrangler d1 execute questmaster-db --remote --command "SELECT user_id, updated_at, value FROM kv WHERE key = 'recurring'"`
+  — 0 rows. Followed up with `SELECT key, COUNT(*) FROM kv GROUP BY key` to
+  confirm the query itself was working (it returned 10 other keys across 2
+  users — `habits`, `gamestate`, `settings`, etc. — just none named
+  `recurring`). No recurring quest has ever been created in this app, so
+  there is nothing for the old and new `getDueToday` to disagree about: the
+  dry run is clean by construction (0 defs, 0 mismatches).
+- Re-derived git state: `git fetch` + `git status` showed `main` ahead of
+  `origin/main` by exactly the one local commit from the first pass, nothing
+  else — safe to push.
+- Amended `45b3a8e`'s message (it was unpushed, so amending rewrote nothing
+  public) to a normal description, recording the dry-run result, then pushed:
+  `e6a439e..e96626527113b5d35c0b67eb4bb7949ea7b1ea81` (`main` →
+  `origin/main`).
+- GitHub Actions run `34960084306` ("Deploy Worker") for that push:
+  **success** (all steps green, ~31s).
+- Live bundle at `go.tarkahn.cc` (`assets/index-0vzzZ1Vh.js`) contains the new
+  label strings: "Every 2 weeks" (×2), "Quarterly" (×2), "Monthly on the",
+  "Yearly" (×2), "Starts on".
+
+Both repos are now fully shipped and verified for this slice.
 
 ## Plan discrepancies found
 
