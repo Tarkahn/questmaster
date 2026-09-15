@@ -9,6 +9,7 @@ export default function SideQuestModal({ parentTask, parentThemedTitle, onCreate
   const [rows, setRows] = useState([])
   const [saving, setSaving] = useState(false)
   const [suggestFailed, setSuggestFailed] = useState(false)
+  const [refusedMessage, setRefusedMessage] = useState(null)
 
   const parentName = parentThemedTitle || parentTask.title
 
@@ -67,11 +68,22 @@ export default function SideQuestModal({ parentTask, parentThemedTitle, onCreate
     const valid = rows.filter(r => r.title.trim())
     if (!valid.length || saving) return
     setSaving(true)
-    await onCreate(parentTask.id, valid.map(r => ({
+    setRefusedMessage(null)
+    const result = await onCreate(parentTask.id, valid.map(r => ({
       title: r.title.trim(),
       due: r.showDate && r.due ? r.due : undefined,
       dueTime: r.showDate && r.due && r.showTime ? r.dueTime : undefined,
     })))
+    // On success onCreate closes this modal itself (parent unmounts us). A
+    // refused result means it deliberately left the modal open with rows
+    // intact, so reset `saving` here — nothing else will.
+    if (result?.refused) {
+      setSaving(false)
+      setRefusedMessage(
+        "Google won't let this quest have side quests because it repeats (or was assigned to you) in Google Tasks. To break it down, turn off its repeat in Google Tasks, or recreate it as a QuestMaster repeating quest."
+        + (result.strayLeft ? ' One loose copy was left in the main list — delete it by hand.' : '')
+      )
+    }
   }
 
   const validCount = rows.filter(r => r.title.trim()).length
@@ -95,6 +107,10 @@ export default function SideQuestModal({ parentTask, parentThemedTitle, onCreate
               <p className="sidequest-note">
                 Couldn't suggest a breakdown for this one — add your own side quests below.
               </p>
+            )}
+
+            {refusedMessage && (
+              <p className="sidequest-note">{refusedMessage}</p>
             )}
 
             <div className="sidequest-rows">

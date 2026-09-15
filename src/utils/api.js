@@ -168,6 +168,19 @@ export async function createSubtask(token, parentId, { title, due, dueTime, note
   return res.json()
 }
 
+// Fetches a single task by id — used to double-check whether an insert
+// actually nested under its parent before deleting anything (see
+// handleCreateSideQuests in Dashboard.jsx). Google's Task resource documents
+// `parent` as output-only, "omitted if it is a top-level task."
+export async function getTask(token, taskId) {
+  const res = await fetch(
+    `${BASE}/tasks/v1/lists/@default/tasks/${encodeURIComponent(taskId)}`,
+    { headers: authHeaders(token) }
+  )
+  if (!res.ok) throw new Error(`Failed to fetch task: ${res.status}`)
+  return res.json()
+}
+
 // Moves a subtask to a new position under its parent.
 // previousId: the sibling that should be immediately before it, or null for first position.
 export async function moveSubtask(token, taskId, { parentId, previousId }) {

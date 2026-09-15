@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchTodaysTasks, fetchUpcomingEvents, markTaskComplete, markTaskIncomplete, createTask, createSubtask, createEvent, deleteTask, updateTask, updateTaskChecklist, deleteEvent, updateEvent, buildCompanionEvent, formatQuestTime, moveSubtask, parseQuestTime, parseQuestReminder, parseChecklist, stripAuxTags, dueDateOnly, localMidnight } from '../utils/api'
+import { fetchTodaysTasks, fetchUpcomingEvents, markTaskComplete, markTaskIncomplete, createTask, createSubtask, getTask, createEvent, deleteTask, updateTask, updateTaskChecklist, deleteEvent, updateEvent, buildCompanionEvent, formatQuestTime, moveSubtask, parseQuestTime, parseQuestReminder, parseChecklist, stripAuxTags, dueDateOnly, localMidnight } from '../utils/api'
 import { computeCoins, BASE_COIN_VALUE } from '../utils/coinValue'
 import { themeItems, clearThemeCache, getThemeCacheAll, applyThemeCache } from '../utils/theme'
 import { loadDifficultyMemory, saveDifficultyMemory, getDifficulty, setDifficultyInMemory } from '../utils/difficulty'
@@ -1056,25 +1056,65 @@ export default function Dashboard({ token, onSignOut }) {
     saveTaskOrderToDrive(token, payload)
   }
 
+  // Google silently refuses to nest a subtask under a parent that repeats (or
+  // was assigned from Docs/Chat) in Google Tasks itself — it returns 200 with
+  // no error, just no `parent` on the created task. Probe with the first side
+  // quest only: if Google refuses it, every other side quest in this batch
+  // would refuse too, so stop rather than create N strays.
   async function handleCreateSideQuests(parentId, sideQuests) {
-    const created = []
-    for (const sq of sideQuests) {
+    if (!sideQuests.length) { setSideQuestParent(null); return }
+    const [first, ...rest] = sideQuests
+
+    let sub
+    try {
+      sub = await createSubtask(token, parentId, first)
+    } catch (err) {
+      console.error('Failed to create side quest:', err)
+      setSideQuestParent(null)
+      return
+    }
+
+    if (sub.parent !== parentId) {
+      // The insert response didn't carry a matching `parent` — confirm with a
+      // GET before deleting anything. A false positive here would delete a
+      // side quest that actually nested fine, so an unconfirmed suspicion
+      // (including a failed GET) must NOT delete.
+      let confirmedRefused = false
       try {
-        const sub = await createSubtask(token, parentId, sq)
-        created.push(sub)
+        const fetched = await getTask(token, sub.id)
+        confirmedRefused = fetched.parent !== parentId
+      } catch (err) {
+        console.error('Failed to confirm side quest nesting:', err)
+      }
+      if (confirmedRefused) {
+        let strayLeft = false
+        try {
+          await deleteTask(token, sub.id)
+        } catch (err) {
+          console.error('Failed to delete stray side quest:', err)
+          strayLeft = true
+        }
+        return { refused: true, strayLeft }
+      }
+    }
+
+    // First side quest nested fine — create the rest exactly as before.
+    const created = [sub]
+    for (const sq of rest) {
+      try {
+        const s = await createSubtask(token, parentId, sq)
+        created.push(s)
       } catch (err) {
         console.error('Failed to create side quest:', err)
       }
     }
-    if (created.length) {
-      // Google returns subtasks in reverse insert order; sort by position on reload.
-      setSubtasksByParent(prev => ({
-        ...prev,
-        [parentId]: [...(prev[parentId] || []), ...created],
-      }))
-      setToast(`⚡ ${created.length} side quest${created.length > 1 ? 's' : ''} added!`)
-      loadTasksAndEvents() // refetch to get correct order + theme the new subtasks
-    }
+    // Google returns subtasks in reverse insert order; sort by position on reload.
+    setSubtasksByParent(prev => ({
+      ...prev,
+      [parentId]: [...(prev[parentId] || []), ...created],
+    }))
+    setToast(`⚡ ${created.length} side quest${created.length > 1 ? 's' : ''} added!`)
+    loadTasksAndEvents() // refetch to get correct order + theme the new subtasks
     setSideQuestParent(null)
   }
 
