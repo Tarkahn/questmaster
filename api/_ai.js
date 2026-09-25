@@ -8,7 +8,9 @@
 // setting AI_PROVIDER=anthropic with no other changes reproduces the
 // pre-migration behavior exactly, as a production rollback.
 
-const AI_TIMEOUT_MS = 30000
+// Default per-call timeout; callers needing longer (theme, on the OpenAI
+// medium-thinking path) pass their own `timeoutMs`.
+const DEFAULT_TIMEOUT_MS = 30000
 
 // Single source of truth for provider/model resolution, shared by callAI,
 // isAIConfigured, and the /api/ai-model endpoint (which surfaces this to the
@@ -24,7 +26,7 @@ export function isAIConfigured() {
   return Boolean(provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY)
 }
 
-async function callAnthropic({ system, prompt, maxTokens, temperature, model }) {
+async function callAnthropic({ system, prompt, maxTokens, temperature, model, timeoutMs }) {
   const body = {
     model,
     max_tokens: maxTokens,
@@ -41,23 +43,24 @@ async function callAnthropic({ system, prompt, maxTokens, temperature, model }) 
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs ?? DEFAULT_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(`Anthropic error ${res.status}`)
   return res.json()
 }
 
-async function callOpenAI({ system, prompt, openaiMaxTokens, jsonSchema, model }) {
+async function callOpenAI({ system, prompt, openaiMaxTokens, jsonSchema, model, reasoningEffort, timeoutMs }) {
   const messages = system ? [{ role: 'system', content: system }] : []
   messages.push({ role: 'user', content: prompt })
 
   const body = {
     model,
     max_completion_tokens: openaiMaxTokens,
-    // Lowest effort Luna accepts — these are short titles/subtasks/flavor
-    // text with no benefit from reasoning, and reasoning tokens eat into
-    // max_completion_tokens.
-    reasoning_effort: 'none',
+    // Lowest effort Luna accepts unless a caller asks for more — breakdown
+    // and habit are short titles/subtasks/flavor text with no benefit from
+    // reasoning, and reasoning tokens eat into max_completion_tokens. Theme
+    // (OpenAI path) passes 'medium' to escape near-literal titling.
+    reasoning_effort: reasoningEffort ?? 'none',
     messages,
   }
   if (jsonSchema) {
@@ -74,7 +77,7 @@ async function callOpenAI({ system, prompt, openaiMaxTokens, jsonSchema, model }
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs ?? DEFAULT_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(`OpenAI error ${res.status}`)
   return res.json()
@@ -84,13 +87,15 @@ async function callOpenAI({ system, prompt, openaiMaxTokens, jsonSchema, model }
 // from today); `openaiMaxTokens` is the raised OpenAI-path cap, since
 // reasoning tokens there count against the same budget as output tokens.
 // `temperature` is only ever forwarded on the Anthropic path — GPT-5-series
-// reasoning models reject it.
-export async function callAI({ system, prompt, maxTokens, openaiMaxTokens, jsonSchema, temperature }) {
+// reasoning models reject it. `reasoningEffort` is OpenAI-only and defaults
+// to 'none' (breakdown/habit behaviour, unchanged). `timeoutMs` defaults to
+// DEFAULT_TIMEOUT_MS; theme's OpenAI path passes a longer one.
+export async function callAI({ system, prompt, maxTokens, openaiMaxTokens, jsonSchema, temperature, reasoningEffort, timeoutMs }) {
   const { provider, model } = getActiveModel()
   if (provider === 'anthropic') {
-    return callAnthropic({ system, prompt, maxTokens, temperature, model })
+    return callAnthropic({ system, prompt, maxTokens, temperature, model, timeoutMs })
   }
-  return callOpenAI({ system, prompt, openaiMaxTokens, jsonSchema, model })
+  return callOpenAI({ system, prompt, openaiMaxTokens, jsonSchema, model, reasoningEffort, timeoutMs })
 }
 
 // Handles both the Anthropic content-block shape and the OpenAI choices
