@@ -39,7 +39,7 @@ const V2_EXAMPLES = `EXAMPLES (match this voice — vivid, specific, still obvio
 
 THE MOST IMPORTANT RULE: a title that just restates the task with a capital letter is a FAILURE. "Read Thirty Pages of Dune", "Practice the Guitar" and "Repair the Leaking Faucet" are all failures. Every title must replace the modern verb AND at least one modern noun with an in-world equivalent, while the real task stays recognizable (keep the key object or name: Dune, the faucet, Max).
 
-AVOID: generic filler that could fit any task ("Embark on a Grand Quest", "Undertake the Sacred Duty"), dropping the concrete object entirely, stacking three adjectives, modern words like "your", "appointment", "gym", "membership", and Tolkien words (hobbit, Middle-earth, lembas, Mordor). Modern possessives — "your", "my", "our" — must never appear, not even once: "Attend the Guild Meeting", never "Attend Your Guild Meeting".`
+AVOID: generic filler that could fit any task ("Embark on a Grand Quest", "Undertake the Sacred Duty"), dropping the concrete object entirely, stacking three adjectives, modern words like "your", "appointment", "gym", "membership", and Tolkien words (hobbit, Middle-earth, lembas, Mordor). Modern possessives — "your", "my", "our", in any capitalization — must never appear, not even once: "Attend the Guild Meeting", never "Attend Your Guild Meeting". Rephrase around the adventurer or the object itself instead.`
 
 const V2_SYSTEM_PROMPT = BASE_SYSTEM_PROMPT
   .replace('1. Keep each themed title under 10 words.', '1. Keep each themed title to 10 words or fewer — count them.')
