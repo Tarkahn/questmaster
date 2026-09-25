@@ -13,9 +13,9 @@ Grepped `api/`, `src/`, and `.env.example` for any other `5.6` / `luna` mentions
 ## Verify
 
 - `npm run build` passed (vite build succeeded, PWA precache generated, only the pre-existing >500kB chunk-size warning, unrelated to this change).
-- Committed and pushed to `main` as commit `1a730e8` ("Default OpenAI model to gpt-6-luna"). Only `api/_ai.js`, `.env.example`, this brief, and this report were staged — `docs/luna-migration-prompts.md` was left untracked as instructed.
-- Vercel production deployment for commit `1a730e8`: **[fill after deploy check]**
-- Runtime logs after deploy: **[fill after deploy check]**
+- Committed and pushed to `main` as commit `d12469b` ("Default OpenAI model to gpt-6-luna"). Only `api/_ai.js`, `.env.example`, this brief, and this report were staged — `docs/luna-migration-prompts.md` was left untracked as instructed.
+- Vercel production deployment for commit `d12469b`: `dpl_hF4LaZ5Ld2dFcuxX7AxYoUXhjVxN`, reached `READY` and is aliased to `questmaster-rouge.vercel.app` (and `quest.tarkahn.cc`).
+- Runtime logs on that deployment for the last 30 minutes, filtered for errors/fatal and "OpenAI error": none found. That's expected — no traffic has hit the fresh deployment yet, so this only confirms no cold-start crash, not that a real theming call succeeds.
 
 ## What's left for Richard
 
