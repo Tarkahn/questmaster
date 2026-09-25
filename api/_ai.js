@@ -4,7 +4,7 @@
 //
 // Provider switch: AI_PROVIDER selects 'openai' (default) or 'anthropic'.
 // AI_MODEL overrides the model for whichever provider is active; unset, it
-// defaults to gpt-5.6-luna (openai) or claude-haiku-4-5 (anthropic) — so
+// defaults to gpt-6-luna (openai) or claude-haiku-4-5 (anthropic) — so
 // setting AI_PROVIDER=anthropic with no other changes reproduces the
 // pre-migration behavior exactly, as a production rollback.
 
@@ -15,7 +15,7 @@ const AI_TIMEOUT_MS = 30000
 // Settings UI).
 export function getActiveModel() {
   const provider = process.env.AI_PROVIDER || 'openai'
-  const model = process.env.AI_MODEL || (provider === 'anthropic' ? 'claude-haiku-4-5' : 'gpt-5.6-luna')
+  const model = process.env.AI_MODEL || (provider === 'anthropic' ? 'claude-haiku-4-5' : 'gpt-6-luna')
   return { provider, model }
 }
 
