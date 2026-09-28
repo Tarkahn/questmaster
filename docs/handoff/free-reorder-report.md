@@ -124,3 +124,21 @@ Drive sync) needs a live check.
 
 Both dev servers (`vite --port 5202`, `wrangler dev`) stopped. No source
 changes remain from the live-testing session (confirmed with `git status`).
+
+## Live result (lead, 2026-09-28)
+
+Checker verdict PASS (qitem-20260928152925-04b95707). Fast-forwarded and pushed:
+questmaster `2926ef9..db0ca53`, standalone `e116224..862fe31`.
+
+- questmaster: newest Vercel production deployment READY; marker
+  `qm-free-reorder` found in the bundle served at questmaster-rouge.vercel.app
+  (`/assets/index-DlgxwSI9.js`).
+- standalone: "Deploy Worker" run for 862fe31 succeeded; marker found at
+  go.tarkahn.cc (`/assets/index-Dy4aSKwP.js`).
+- Not yet confirmed by use: questmaster's Google-signed-in list behaviour
+  (Google Tasks date/time glue, Drive sync of the order), and day-rollover
+  cases C and D in either app. Rick's first use covers these.
+- Spend: the checker made 1 paid theme call (a manual "+ New Quest"); the
+  builder made none.
+
+This section is committed on local `main` only; it goes out with the next push.
