@@ -8,7 +8,7 @@ import { loadFromDrive, saveToDrive, loadGlossary, saveGlossary, loadDifficultie
 import { loadLedger, saveLedger, recordMissions, resolveMission, runPenaltyPass, dueChangePenalty, mergeLedgers, recurringMissPenalty, todayStr } from '../utils/penalties'
 import { loadRecurring, loadRecurringMeta, saveRecurring, saveRecurringRaw, createRecurringDef, getDueToday, markMaterialized, scheduleLabel, setLastTaskId, recordCompletion, recordMiss } from '../utils/recurring'
 import { loadRumors, loadRumorsMeta, saveRumors, saveRumorsRaw, createRumor } from '../utils/rumors'
-import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, computeDisplayOrder, computeAutoSortOrder, computeCombinedOrder, reorderIds } from '../utils/taskOrder'
+import { loadTaskOrder, saveTaskOrder, saveTaskOrderRaw, buildOrderEntries, computeOrder, canonicalizeOrder, reorderSavedOrder, isLockedQuest } from '../utils/taskOrder'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../utils/settings'
 import { DEFAULT_GLOSSARY } from '../utils/defaultGlossary'
@@ -92,29 +92,44 @@ function groupEventsByDay(events) {
   return groups
 }
 
-// The day a combined-view row belongs under. Missions carry a timestamp;
-// quests carry Google Tasks' UTC-midnight `due`, which has to go through
-// localMidnight — `new Date(due)` rolls back a day west of Greenwich.
-// Undated quests return null and collect under their own heading.
-function combinedEntryDate(entry) {
-  return entry.type === 'mission'
-    ? eventStartDate(entry.item)
-    : localMidnight(entry.item.due)
+// The day a LOCKED combined-view row belongs under. Missions carry a
+// timestamp; dated quests carry Google Tasks' UTC-midnight `due`, which has
+// to go through localMidnight — `new Date(due)` rolls back a day west of
+// Greenwich. A timed-no-date quest (a spawned recurring instance with a
+// reminder time) is locked but has no `due`, so it's treated as today, same
+// as its time-of-day placement in taskOrder.js. Free entries return null —
+// see groupCombinedByDay for how they inherit a heading.
+function lockedEntryDate(entry) {
+  if (!entry.locked) return null
+  if (entry.type === 'mission') return eventStartDate(entry.item)
+  if (entry.item.due) return localMidnight(entry.item.due)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  return today
 }
 
-// Same day-bucketing as groupEventsByDay, over the merged quest+mission list.
-// Mission cards show only a time of day and quest cards only a bare month/day,
-// so without these headers the combined list gives no way to tell which day an
-// item falls on — the reason the 3-day / week / month windows were hard to read.
-// computeCombinedOrder already sorts by deadline and pins undated quests last,
-// so consecutive runs share a day and the undated ones form one trailing group.
-// Each row keeps its position in the flat list as `index`, which drives the
-// staggered card animation.
+// Same day-bucketing as groupEventsByDay, over the merged quest+mission
+// order. Mission cards show only a time of day and quest cards only a bare
+// month/day, so without these headers the combined list gives no way to
+// tell which day an item falls on. A free (undated, untimed) entry has no
+// day of its own — it inherits the day of the next LOCKED entry in the
+// final order, so it shows under whichever section it was dropped into; a
+// free entry with no locked entry after it (i.e. it sits after every locked
+// item) falls into the trailing "No date" group. Each row keeps its
+// position in the flat list as `index`, which drives the staggered card
+// animation.
 function groupCombinedByDay(entries) {
+  const ownDates = entries.map(lockedEntryDate)
+  let next = null
+  const dates = new Array(entries.length)
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (ownDates[i]) next = ownDates[i]
+    dates[i] = ownDates[i] || next
+  }
+
   const groups = []
   let cur = null
   entries.forEach((entry, index) => {
-    const d = combinedEntryDate(entry)
+    const d = dates[index]
     const key = d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'undated'
     if (!cur || cur.key !== key) {
       cur = { key, label: d ? dayHeaderLabel(d) : 'No date', entries: [] }
@@ -744,6 +759,18 @@ export default function Dashboard({ token, onSignOut }) {
             const todayDate = new Date().toLocaleDateString('en-CA')
             const newTask = await createTask(token, { title: def.title, dueTime: def.dueTime || undefined, notes: def.notes || undefined, reminderMinutes: def.reminderMinutes ?? undefined })
             updated = setLastTaskId(updated, def.id, newTask?.id || null)
+            // First time this definition has ever spawned since free-reorder
+            // shipped, give it a slot like any other new free quest — Rule 4
+            // (keyForTask, def.id) keeps it there on every later spawn.
+            if (newTask?.id) {
+              setTaskOrder(prev => {
+                if (prev.order.includes(def.id)) return prev
+                const next = settings.newQuestPosition === 'top' ? [def.id, ...prev.order] : [...prev.order, def.id]
+                const payload = saveTaskOrder(next, prev.dragged)
+                saveTaskOrderToDrive(token, payload)
+                return payload
+              })
+            }
             if (def.dueTime) {
               try { await createEvent(token, buildCompanionEvent(def.title, todayDate, def.dueTime, def.reminderMinutes ?? settings.defaultReminderMinutes)) } catch {}
             }
@@ -1045,15 +1072,36 @@ export default function Dashboard({ token, onSignOut }) {
     setSideQuestParent(taskObj)
   }
 
-  // Drag-to-reorder (undated quests only). `orderedTasks` is the displayed list.
-  function handleDragEnd(result) {
-    const { source, destination } = result
-    if (!destination || destination.index === source.index) return
-    const displayedIds = orderedTasks.map(t => t.id)
-    const newIds = reorderIds(displayedIds, source.index, destination.index)
-    const payload = saveTaskOrder(newIds)   // writes localStorage with fresh updatedAt
+  // Drag-to-reorder (free quests only — locked items can't start a drag).
+  // `displayedEntries` is whichever view's currently-rendered order (main
+  // list or Full List); reorderSavedOrder folds the move into the full
+  // saved order without disturbing keys this view doesn't show (e.g.
+  // missions when the main list is up).
+  function handleReorder(displayedEntries, fromIndex, toIndex) {
+    if (fromIndex === toIndex) return
+    const moved = displayedEntries[fromIndex]
+    if (moved.locked) return
+    const displayedKeys = displayedEntries.map(e => e.key)
+    // canonicalSavedOrder, not the raw taskOrder.order, so a legacy-format
+    // entry (a recurring instance's old raw task id) migrates to its def-id
+    // key the first time it's touched by a drag, instead of going stale.
+    const newOrder = reorderSavedOrder(canonicalSavedOrder, displayedKeys, fromIndex, toIndex)
+    const dragged = [...new Set([...(taskOrder.dragged || []), moved.key])]
+    const payload = saveTaskOrder(newOrder, dragged)   // writes localStorage with fresh updatedAt
     setTaskOrder(payload)
     saveTaskOrderToDrive(token, payload)
+  }
+
+  function handleDragEnd(result) {
+    const { source, destination } = result
+    if (!destination) return
+    handleReorder(orderedEntries, source.index, destination.index)
+  }
+
+  function handleCombinedDragEnd(result) {
+    const { source, destination } = result
+    if (!destination) return
+    handleReorder(combinedEntries, source.index, destination.index)
   }
 
   // Google silently refuses to nest a subtask under a parent that repeats (or
@@ -1332,7 +1380,7 @@ export default function Dashboard({ token, onSignOut }) {
       if (data.due && data.dueTime) {
         try { await createEvent(token, buildCompanionEvent(data.title, data.due, data.dueTime, data.reminderMinutes)) } catch {}
       }
-      // Immediately slot the new task into the saved order so computeDisplayOrder
+      // Immediately slot the new task into the saved order so computeOrder
       // places it at the right end rather than wherever the API returns it.
       if (created?.id) {
         setTaskOrder(prev => {
@@ -1340,7 +1388,7 @@ export default function Dashboard({ token, onSignOut }) {
           const next = settings.newQuestPosition === 'top'
             ? [created.id, ...existing]
             : [...existing, created.id]
-          const payload = saveTaskOrder(next)
+          const payload = saveTaskOrder(next, prev.dragged)
           saveTaskOrderToDrive(token, payload)
           return payload
         })
@@ -1774,10 +1822,16 @@ export default function Dashboard({ token, onSignOut }) {
   const defeatedHabits = habits.filter(h => h.status === 'defeated')
   const canAddHabit = activeHabits.length < 3
 
-  // Display order: auto-sort by urgency when enabled, otherwise manual+date order.
-  const orderedTasks = settings.autoSort
-    ? computeAutoSortOrder(tasks, taskSeenMap)
-    : computeDisplayOrder(tasks, taskOrder.order)
+  // A recurring instance's order key is its stable definition id, not its
+  // throwaway daily task id — same map theming uses (see loadTasksAndEvents).
+  const defIdByTaskId = new Map(recurring.filter(d => d.lastTaskId).map(d => [d.lastTaskId, d.id]))
+  const canonicalSavedOrder = canonicalizeOrder(taskOrder.order, defIdByTaskId)
+  const orderOpts = { autoSort: settings.autoSort, dragged: taskOrder.dragged, taskSeenMap }
+
+  // Display order: locked items (dated, missions, timed-no-date recurring)
+  // always sort into strict time order; free items keep their manual slot
+  // (or, with Auto-sort on, the slot of whichever ones Rick has dragged).
+  const orderedEntries = computeOrder(buildOrderEntries(tasks, defIdByTaskId), canonicalSavedOrder, orderOpts)
 
   // Mission look-ahead window + day grouping for the multi-day view.
   // Crystal Ball (off-hand) forces a minimum of 3 days even if the user hasn't expanded manually.
@@ -1785,11 +1839,11 @@ export default function Dashboard({ token, onSignOut }) {
   const lookAhead = crystalBallEquipped ? Math.max(3, settings.missionLookAhead || 0) : (settings.missionLookAhead || 0)
   const groupedEvents = lookAhead > 0 ? groupEventsByDay(events) : null
 
-  // "Full List" combined view: quests + missions interleaved by urgency,
+  // "Full List" combined view: quests + missions in the same shared order,
   // claimed missions filtered out (they live in the shared completed bucket instead).
   const unclaimedEvents = events.filter(e => !isEventClaimed(e.id))
-  const combinedOrder = settings.combinedView
-    ? computeCombinedOrder(tasks, unclaimedEvents, taskSeenMap)
+  const combinedEntries = settings.combinedView
+    ? computeOrder(buildOrderEntries(tasks, defIdByTaskId, unclaimedEvents), canonicalSavedOrder, orderOpts)
     : null
   const combinedCompletedEntries = settings.combinedView
     ? [
@@ -2217,36 +2271,53 @@ export default function Dashboard({ token, onSignOut }) {
                 </div>
               )}
               {settings.combinedView
-                ? (combinedOrder.length === 0 && combinedCompletedEntries.length === 0
+                ? (combinedEntries.length === 0 && combinedCompletedEntries.length === 0
                     ? <p className="empty">No quests or missions right now. Tap <strong>+ New Quest</strong> or <strong>+ New Mission</strong> to add one.</p>
                     : (
-                      <div>
-                        {groupCombinedByDay(combinedOrder).map(group => (
-                          <div key={group.key} className="mission-day-group">
-                            <div className="mission-day-header">{group.label}</div>
-                            {group.entries.map(entry => (
-                              entry.type === 'quest'
-                                ? renderTaskItem(entry.item, entry.index)
-                                : renderEventItem(entry.item, entry.index)
-                            ))}
-                          </div>
-                        ))}
-                      </div>
+                      <DragDropContext onDragEnd={handleCombinedDragEnd}>
+                        <Droppable droppableId="combined" data-qm-free-reorder="combined">
+                          {(dropProvided) => (
+                            <div ref={dropProvided.innerRef} {...dropProvided.droppableProps}>
+                              {groupCombinedByDay(combinedEntries).map(group => (
+                                <div key={group.key} className="mission-day-group">
+                                  <div className="mission-day-header">{group.label}</div>
+                                  {group.entries.map(entry => (
+                                    <Draggable key={entry.key} draggableId={entry.key} index={entry.index} isDragDisabled={entry.locked}>
+                                      {(dragProvided, dragSnapshot) => (
+                                        <div
+                                          ref={dragProvided.innerRef}
+                                          {...dragProvided.draggableProps}
+                                          className={dragSnapshot.isDragging ? 'task-dragging' : undefined}
+                                        >
+                                          {entry.type === 'quest'
+                                            ? renderTaskItem(entry.item, entry.index, entry.locked ? null : dragProvided.dragHandleProps)
+                                            : renderEventItem(entry.item, entry.index)}
+                                        </div>
+                                      )}
+                                    </Draggable>
+                                  ))}
+                                </div>
+                              ))}
+                              {dropProvided.placeholder}
+                            </div>
+                          )}
+                        </Droppable>
+                      </DragDropContext>
                     )
                   )
                 : (tasks.length === 0 && completedTasks.length === 0
                     ? <p className="empty">No quests today — your Google Tasks for today will appear here. Tap <strong>+ New Quest</strong> to create one.</p>
                     : (
                       <DragDropContext onDragEnd={handleDragEnd}>
-                        <Droppable droppableId="quests">
+                        <Droppable droppableId="quests" data-qm-free-reorder="main">
                           {(dropProvided) => (
                             <div ref={dropProvided.innerRef} {...dropProvided.droppableProps}>
-                              {orderedTasks.map((task, index) => (
+                              {orderedEntries.map((entry, index) => (
                                 <Draggable
-                                  key={task.id}
-                                  draggableId={task.id}
+                                  key={entry.key}
+                                  draggableId={entry.key}
                                   index={index}
-                                  isDragDisabled={settings.autoSort || Boolean(task.due)}
+                                  isDragDisabled={entry.locked}
                                 >
                                   {(dragProvided, dragSnapshot) => (
                                     <div
@@ -2254,7 +2325,7 @@ export default function Dashboard({ token, onSignOut }) {
                                       {...dragProvided.draggableProps}
                                       className={dragSnapshot.isDragging ? 'task-dragging' : undefined}
                                     >
-                                      {renderTaskItem(task, index, (settings.autoSort || task.due) ? null : dragProvided.dragHandleProps)}
+                                      {renderTaskItem(entry.item, index, entry.locked ? null : dragProvided.dragHandleProps)}
                                     </div>
                                   )}
                                 </Draggable>
