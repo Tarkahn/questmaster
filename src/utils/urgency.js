@@ -3,7 +3,7 @@
 // tier: drives bar color
 // label: human-readable tooltip
 
-import { localMidnight, parseQuestTime } from './api'
+import { localMidnight, parseQuestTime } from './api.js'
 
 const HOUR_MS = 3600000
 
